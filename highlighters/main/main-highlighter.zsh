@@ -308,7 +308,14 @@ _zsh_highlight_main__is_global_alias() {
 }
 
 _zsh_highlight_main__is_function_name() {
-  [[ $1 == [[:alpha:]_][[:alnum:]_]# ]]
+  [[ -n $1 ]] || return 1
+  [[ $1 != *[[:blank:]]* ]] || return 1
+  case $1 in
+    ('()'|'('|')'|'{'|'}'|'['|']'|';'|'|'|'||'|'&'|'&&'|'|&'|'&!'|'&|'|?*=*|-*)
+      return 1
+      ;;
+  esac
+  return 0
 }
 
 _zsh_highlight_main__starts_function_definition() {
@@ -1018,9 +1025,15 @@ _zsh_highlight_main_highlighter_highlight_list()
     fi
 
     if (( ! in_redirection )); then
-      if [[ $this_word == *':function_after_reserved:'* ]]; then
-        if _zsh_highlight_main__is_function_name "$arg"; then
+      if [[ $this_word == *':function_header:'* ]]; then
+        if [[ $arg == '-T' ]]; then
+          style=single-hyphen-option
+          next_word=':function_header:'
+        elif _zsh_highlight_main__is_function_name "$arg"; then
           style=function
+          next_word=':function_header:'
+        elif [[ $arg == '()' ]]; then
+          style=reserved-word
           next_word=':start::start_of_pipeline:'
         elif [[ $arg == $'\x7b' ]]; then
           style=reserved-word
@@ -1242,7 +1255,7 @@ _zsh_highlight_main_highlighter_highlight_list()
                             fi
                             ;;
                           ('function')
-                            next_word=':function_after_reserved:'
+                            next_word=':function_header:'
                             ;;
                         esac
                         if $saw_assignment &&
@@ -1831,6 +1844,10 @@ _zsh_highlight_main_highlighter_highlight_parameter_expansion()
       ':')
         if [[ $parser_state == subject || ( $parser_state == rhs && substring_operator ) ]]; then
           integer substring_continuation=$substring_operator
+          integer offset_index=$(( i + 1 ))
+          while [[ $arg[$offset_index] == ' ' ]]; do
+            (( offset_index++ ))
+          done
           operator_len=0
           if [[ $parser_state == subject ]] &&
              [[ $arg[$(( i + 1 ))] == ':' && $arg[$(( i + 2 ))] == '=' ]]
@@ -1843,7 +1860,7 @@ _zsh_highlight_main_highlighter_highlight_parameter_expansion()
             if [[ $arg[$(( i + 1 ))] == '^' && $arg[$(( i + 2 ))] == '^' ]]; then
               operator_len=3
             fi
-          elif [[ $arg[$(( i + 1 ))] == [0-9\$\(\-] ]]; then
+          elif [[ $arg[$offset_index] == [0-9\$\(\-] ]]; then
             operator_len=1
           fi
 
