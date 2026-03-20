@@ -436,7 +436,19 @@ _zsh_highlight_main__lookup_subject_type() {
       _zsh_highlight_main__external_target_type "$subject"
       ;;
     (*)
-      _zsh_highlight_main__type "$subject" 0
+      if zmodload -e zsh/parameter; then
+        if (( ${+galiases[(e)$subject]} )); then
+          REPLY='global alias'
+        elif (( $+aliases[(e)$subject] )); then
+          REPLY=alias
+        elif [[ $subject == *.* && -n ${subject%.*} ]] && (( $+saliases[(e)${subject##*.}] )); then
+          REPLY='suffix alias'
+        else
+          _zsh_highlight_main__type "$subject" 0
+        fi
+      else
+        _zsh_highlight_main__type "$subject"
+      fi
       ;;
   esac
 }
@@ -985,14 +997,23 @@ _zsh_highlight_main_highlighter_highlight_list()
     # Parse the sudo command line
     if (( ! in_redirection )); then
       local precommand_mode_marker=''
+      local lookup_subject_pending_marker=''
       if [[ $this_word == *':precommand_target_builtin:'* ]]; then
         precommand_mode_marker=':precommand_target_builtin:'
       elif [[ $this_word == *':precommand_target_external:'* ]]; then
         precommand_mode_marker=':precommand_target_external:'
       fi
+      if [[ $this_word == *':lookup_subject_pending:'* ]]; then
+        lookup_subject_pending_marker=':lookup_subject_pending:'
+      fi
       if [[ $this_word == *':sudo_opt:'* ]]; then
+        local option_state_prefix=':start:'
         if [[ $this_word == *':precommand_name_command:'* ]] && [[ $arg == -*[vV]* ]]; then
-          this_word=':sudo_opt:'
+          lookup_subject_pending_marker=':lookup_subject_pending:'
+        fi
+        [[ -n $lookup_subject_pending_marker ]] && option_state_prefix=''
+        if [[ -n $lookup_subject_pending_marker ]] && [[ $arg != '-'* ]]; then
+          this_word=':lookup_subject:'
           next_word=':lookup_subject:'
         elif [[ -n $flags_with_argument ]] &&
            { 
@@ -1005,6 +1026,7 @@ _zsh_highlight_main_highlighter_highlight_list()
           # Flag that requires an argument
           this_word=${this_word//:start:/}
           next_word=':sudo_arg:'"$precommand_mode_marker"
+          next_word+="$lookup_subject_pending_marker"
         elif [[ -n $flags_with_argument ]] &&
              {
                # Trenary
@@ -1015,16 +1037,18 @@ _zsh_highlight_main_highlighter_highlight_list()
              } then
           # Argument attached in the same word
           this_word=${this_word//:start:/}
-          next_word+=':start:'
+          next_word+="$option_state_prefix"
           next_word+=':sudo_opt:'
           next_word+="$precommand_mode_marker"
+          next_word+="$lookup_subject_pending_marker"
         elif [[ -n $flags_sans_argument ]] &&
              [[ $arg == '-'[$flags_sans_argument]# ]]; then
           # Flag that requires no argument
           this_word=':sudo_opt:'
-          next_word+=':start:'
+          next_word+="$option_state_prefix"
           next_word+=':sudo_opt:'
           next_word+="$precommand_mode_marker"
+          next_word+="$lookup_subject_pending_marker"
         elif [[ -n $flags_solo ]] && 
              {
                # Trenary
@@ -1036,6 +1060,7 @@ _zsh_highlight_main_highlighter_highlight_list()
           # Solo flags
           this_word=':sudo_opt:'
           next_word=':regular:'"$precommand_mode_marker" # no :start:, nor :sudo_opt: since we don't know whether the solo flag takes an argument or not
+          next_word+="$lookup_subject_pending_marker"
         elif [[ $arg == '-'* ]]; then
           # Unknown flag.  We don't know whether it takes an argument or not,
           # so modify $next_word as we do for flags that require no argument.
@@ -1045,9 +1070,10 @@ _zsh_highlight_main_highlighter_highlight_list()
           # was given in the same shell word as the flag (as in '-uphy1729' or
           # '--user=phy1729' without spaces).
           this_word=':sudo_opt:'
-          next_word+=':start:'
+          next_word+="$option_state_prefix"
           next_word+=':sudo_opt:'
           next_word+="$precommand_mode_marker"
+          next_word+="$lookup_subject_pending_marker"
         else
           # Not an option flag; nothing to do.  (If the command line is
           # syntactically valid, ${this_word//:sudo_opt:/} should be
@@ -1089,7 +1115,42 @@ _zsh_highlight_main_highlighter_highlight_list()
           next_word=':function_header:'
         elif _zsh_highlight_main__is_function_name "$arg"; then
           style=function
-          next_word=':function_header:'
+          next_word=':function_header_named:'
+        elif [[ $arg == '()' ]]; then
+          style=reserved-word
+          next_word=':start::start_of_pipeline:'
+        elif [[ $arg == $'\x7b' ]]; then
+          style=reserved-word
+          braces_stack='Y'"$braces_stack"
+          next_word=':start::start_of_pipeline:'
+        else
+          style=unknown-token
+        fi
+        _zsh_highlight_main_add_region_highlight $start_pos $end_pos $style
+        continue
+      elif [[ $this_word == *':function_header_named:'* ]]; then
+        if [[ $arg == $'\n' ]]; then
+          style=commandseparator
+          next_word=':function_header_after_newline:'
+        elif _zsh_highlight_main__is_function_name "$arg"; then
+          style=function
+          next_word=':function_header_named:'
+        elif [[ $arg == '()' ]]; then
+          style=reserved-word
+          next_word=':start::start_of_pipeline:'
+        elif [[ $arg == $'\x7b' ]]; then
+          style=reserved-word
+          braces_stack='Y'"$braces_stack"
+          next_word=':start::start_of_pipeline:'
+        else
+          style=unknown-token
+        fi
+        _zsh_highlight_main_add_region_highlight $start_pos $end_pos $style
+        continue
+      elif [[ $this_word == *':function_header_after_newline:'* ]]; then
+        if [[ $arg == $'\n' ]]; then
+          style=commandseparator
+          next_word=':function_header_after_newline:'
         elif [[ $arg == '()' ]]; then
           style=reserved-word
           next_word=':start::start_of_pipeline:'
@@ -1145,6 +1206,10 @@ _zsh_highlight_main_highlighter_highlight_list()
         style=commandseparator
       elif [[ $this_word == *':function_header:'* ]]; then
         style=commandseparator
+      elif [[ $this_word == *':function_header_named:'* ]]; then
+        style=commandseparator
+      elif [[ $this_word == *':function_header_after_newline:'* ]]; then
+        style=commandseparator
       elif [[ $this_word == *':function_name_list:'* ]]; then
         style=commandseparator
       elif [[ $this_word == *':start:'* ]] && [[ $arg == $'\n' ]]; then
@@ -1169,6 +1234,10 @@ _zsh_highlight_main_highlighter_highlight_list()
         next_word=':regular:'
       elif [[ $arg == $'\n' ]] && [[ $this_word == *':function_header:'* ]]; then
         next_word=':function_header:'
+      elif [[ $arg == $'\n' ]] && [[ $this_word == *':function_header_named:'* ]]; then
+        next_word=':function_header_after_newline:'
+      elif [[ $arg == $'\n' ]] && [[ $this_word == *':function_header_after_newline:'* ]]; then
+        next_word=':function_header_after_newline:'
       elif [[ $arg == $'\n' ]] && [[ $this_word == *':function_name_list:'* ]]; then
         next_word=':function_name_list:'
       elif [[ $arg == ';' ]] && $in_array_assignment; then
@@ -1205,13 +1274,20 @@ _zsh_highlight_main_highlighter_highlight_list()
         command_lookup_mode=external
       fi
 
+      local -a function_lookahead
+      function_lookahead=( "${args[@]}" )
+      if [[ ${function_lookahead[1]:-} == ';' ]] && [[ $proc_buf[1] == $'\n' ]]; then
+        function_lookahead[1]=$'\n'
+      fi
+
       if (( ! in_param )) &&
          ! $saw_assignment &&
          (
-           [[ ${args[1]:-} == '()' ]] ||
+           [[ ${function_lookahead[1]:-} == '()' ]] ||
+           [[ ${function_lookahead[1]:-} == $'\n' ]] ||
            [[ ${zsyh_user_options[multifuncdef]:-off} == on ]]
          ) &&
-         _zsh_highlight_main__starts_function_definition "$arg" "${args[@]}"
+         _zsh_highlight_main__starts_function_definition "$arg" "${function_lookahead[@]}"
       then
         style=function
         next_word=':function_name_list:'
@@ -2023,7 +2099,10 @@ _zsh_highlight_main_highlighter_highlight_parameter_expansion()
           then
             operator_len=1
           elif (( substring_continuation )) &&
-               [[ $arg[$offset_index] == [A-Za-z_0-9\$\(\+\-] ]]
+               (
+                 [[ $arg[$offset_index] == [0-9\$\(\+\-] ]] ||
+                 ( (( offset_had_space )) && [[ $arg[$offset_index] == [A-Za-z_0-9\$\(\+\-] ]] )
+               )
           then
             operator_len=1
           fi
@@ -2334,12 +2413,15 @@ _zsh_highlight_main_highlighter_highlight_argument()
       ;;
   esac
 
+  local bare_qualifier_allowed=false explicit_qualifier_allowed=false
+  [[ ${zsyh_user_options[bareglobqual]:-on} == on ]] && bare_qualifier_allowed=true
+  [[ ${zsyh_user_options[extendedglob]:-off} == on ]] && explicit_qualifier_allowed=true
+
   if $highlight_glob &&
      $qualifier_candidate &&
      (
-       $globbing_seen ||
-       [[ $arg == *'(#q'*')' ]] ||
-       [[ $arg =~ '\([^()|~]*\)$' ]]
+       ( $bare_qualifier_allowed && ( $globbing_seen || [[ $arg =~ '\([^()|~]*\)$' ]] ) ) ||
+       ( $explicit_qualifier_allowed && [[ $arg == *'(#q'*')' ]] )
      )
   then
     if _zsh_highlight_main_highlighter_highlight_glob_qualifiers; then

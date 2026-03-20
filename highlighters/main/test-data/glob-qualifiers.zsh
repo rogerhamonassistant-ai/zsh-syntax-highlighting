@@ -1,3 +1,5 @@
+setopt extendedglob
+
 BUFFER=': *(.) *.zsh(#qN)'
 unsorted=1
 
