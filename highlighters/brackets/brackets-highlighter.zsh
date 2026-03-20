@@ -86,21 +86,39 @@ _zsh_highlight_brackets_skip_quoted_region()
 _zsh_highlight_highlighter_brackets_paint()
 {
   local char style
-  local -i bracket_color_size=${#ZSH_HIGHLIGHT_STYLES[(I)bracket-level-*]} buflen=${#BUFFER} level=0 matchingpos pos
+  local -i bracket_color_size=${#ZSH_HIGHLIGHT_STYLES[(I)bracket-level-*]} buflen=${#BUFFER} level=0 matchingpos pos in_double_quote=0
   local -A levelpos lastoflevel matching
 
   # Find all brackets and remember which one is matching
   pos=0
   while (( ++pos <= buflen )); do
     char=$BUFFER[$pos]
+    if (( in_double_quote )); then
+      case $char in
+        ('\\')
+          (( pos++ ))
+          continue
+          ;;
+        ('"')
+          in_double_quote=0
+          continue
+          ;;
+      esac
+    fi
     case $char in
       "'")
-        _zsh_highlight_brackets_skip_quoted_region single $(( pos + 1 ))
-        pos=$REPLY
+        if (( ! in_double_quote )); then
+          _zsh_highlight_brackets_skip_quoted_region single $(( pos + 1 ))
+          pos=$REPLY
+          continue
+        fi
+        ;;
+      '"')
+        in_double_quote=1
         continue
         ;;
       '$')
-        if [[ $BUFFER[$(( pos + 1 ))] == "'" ]]; then
+        if (( ! in_double_quote )) && [[ $BUFFER[$(( pos + 1 ))] == "'" ]]; then
           _zsh_highlight_brackets_skip_quoted_region dollar-single $(( pos + 2 ))
           pos=$REPLY
           continue
