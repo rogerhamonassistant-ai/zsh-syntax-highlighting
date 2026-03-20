@@ -1933,7 +1933,7 @@ _zsh_highlight_main_highlighter_highlight_parameter_expansion()
         (( i++ ))
         continue
         ;;
-      '#' | '%' | '/' | '+' | '=')
+      '#' | '%' | '/' | '+' | '=' | '-' | '?')
         if [[ $parser_state == subject ]]; then
           if [[ $arg[$i] == '#' && i == subject_start ]]; then
             highlights+=($(( start_pos + i - 1 )) $(( start_pos + i )) parameter-expansion-operator)
@@ -2203,9 +2203,12 @@ _zsh_highlight_main_highlighter_highlight_argument()
     esac
   done
 
-  if $globbing_seen ||
-     [[ $arg == *'(#q'*')' ]] ||
-     [[ $arg =~ '\(([NDomn]|[./@*=])([A-Zomnh0-9,+-]|[./@*=])*\)$' ]]
+  if $highlight_glob &&
+     (
+       $globbing_seen ||
+       [[ $arg == *'(#q'*')' ]] ||
+       [[ $arg =~ '\(([NDomn]|[./@*=])([A-Zomnh0-9,+-]|[./@*=])*\)$' ]]
+     )
   then
     if _zsh_highlight_main_highlighter_highlight_glob_qualifiers; then
       highlights+=($reply)
