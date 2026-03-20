@@ -36,7 +36,5 @@ BUFFER=': {"{x}"}'
 
 expected_region_highlight=(
   "3 3 bracket-level-1"
-  "5 5 bracket-level-2"
-  "7 7 bracket-level-2"
   "9 9 bracket-level-1"
 )

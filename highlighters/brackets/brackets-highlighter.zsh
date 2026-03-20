@@ -43,6 +43,53 @@ _zsh_highlight_highlighter_brackets_predicate()
   [[ $WIDGET == zle-line-finish ]] || _zsh_highlight_cursor_moved || _zsh_highlight_buffer_modified
 }
 
+_zsh_highlight_brackets_skip_quoted_region()
+{
+  local mode=$1
+  integer pos=$2
+  local char
+
+  while (( pos <= $#BUFFER )); do
+    char=$BUFFER[$pos]
+    case $mode in
+      (single)
+        if [[ $char == "'" ]]; then
+          if [[ -o rcquotes ]] && [[ $BUFFER[$(( pos + 1 ))] == "'" ]]; then
+            (( pos += 2 ))
+            continue
+          fi
+          REPLY=$pos
+          return 0
+        fi
+        ;;
+      (double|backtick|dollar-single)
+        if [[ $char == '\' ]]; then
+          (( pos += 2 ))
+          continue
+        fi
+        case $mode:$char in
+          (double:'"')
+            REPLY=$pos
+            return 0
+            ;;
+          (backtick:'`')
+            REPLY=$pos
+            return 0
+            ;;
+          (dollar-single:"'")
+            REPLY=$pos
+            return 0
+            ;;
+        esac
+        ;;
+    esac
+    (( pos++ ))
+  done
+
+  REPLY=$(( pos - 1 ))
+  return 1
+}
+
 # Brackets highlighting function.
 _zsh_highlight_highlighter_brackets_paint()
 {
@@ -52,8 +99,36 @@ _zsh_highlight_highlighter_brackets_paint()
 
   # Find all brackets and remember which one is matching
   pos=0
-  for char in ${(s..)BUFFER} ; do
-    (( ++pos ))
+  while (( ++pos <= buflen )); do
+    char=$BUFFER[$pos]
+    case $char in
+      "'")
+        _zsh_highlight_brackets_skip_quoted_region single $(( pos + 1 ))
+        pos=$REPLY
+        continue
+        ;;
+      '"')
+        _zsh_highlight_brackets_skip_quoted_region double $(( pos + 1 ))
+        pos=$REPLY
+        continue
+        ;;
+      '`')
+        _zsh_highlight_brackets_skip_quoted_region backtick $(( pos + 1 ))
+        pos=$REPLY
+        continue
+        ;;
+      '$')
+        if [[ $BUFFER[$(( pos + 1 ))] == "'" ]]; then
+          _zsh_highlight_brackets_skip_quoted_region dollar-single $(( pos + 2 ))
+          pos=$REPLY
+          continue
+        fi
+        ;;
+      "\\")
+        (( pos++ ))
+        continue
+        ;;
+    esac
     case $char in
       ["([{"])
         levelpos[$pos]=$((++level))
