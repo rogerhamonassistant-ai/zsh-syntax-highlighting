@@ -88,7 +88,7 @@ _zsh_highlight_brackets_skip_quoted_region()
 _zsh_highlight_highlighter_brackets_paint()
 {
   local char style
-  local -i bracket_color_size=${#ZSH_HIGHLIGHT_STYLES[(I)bracket-level-*]} buflen=${#BUFFER} level=0 matchingpos pos in_double_quote=0 shell_code_paren_depth=0 pending_command_substitution=0
+  local -i bracket_color_size=${#ZSH_HIGHLIGHT_STYLES[(I)bracket-level-*]} buflen=${#BUFFER} level=0 matchingpos pos in_double_quote=0 shell_code_paren_depth=0 shell_code_double_quote=0 shell_code_double_quote_base_level=0 pending_command_substitution=0
   local -A levelpos lastoflevel matching
 
   # Find all brackets and remember which one is matching
@@ -104,7 +104,7 @@ _zsh_highlight_highlighter_brackets_paint()
           continue
           ;;
         ("'")
-          if (( shell_code_paren_depth > 0 )); then
+          if (( shell_code_paren_depth > 0 )) && (( ! shell_code_double_quote )); then
             _zsh_highlight_brackets_skip_quoted_region single $(( pos + 1 ))
             pos=$REPLY
             continue
@@ -113,11 +113,22 @@ _zsh_highlight_highlighter_brackets_paint()
         ('"')
           if (( shell_code_paren_depth == 0 )); then
             in_double_quote=0
-            continue
+          else
+            if (( shell_code_double_quote )); then
+              while (( level > shell_code_double_quote_base_level )); do
+                unset "lastoflevel[$level]"
+                (( level-- ))
+              done
+              shell_code_double_quote=0
+            else
+              shell_code_double_quote=1
+              shell_code_double_quote_base_level=$level
+            fi
           fi
+          continue
           ;;
         ('$')
-          if (( shell_code_paren_depth > 0 )) && [[ $BUFFER[$(( pos + 1 ))] == "'" ]]; then
+          if (( shell_code_paren_depth > 0 )) && (( ! shell_code_double_quote )) && [[ $BUFFER[$(( pos + 1 ))] == "'" ]]; then
             _zsh_highlight_brackets_skip_quoted_region dollar-single $(( pos + 2 ))
             pos=$REPLY
             continue
