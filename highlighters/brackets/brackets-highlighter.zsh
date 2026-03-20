@@ -88,7 +88,7 @@ _zsh_highlight_brackets_skip_quoted_region()
 _zsh_highlight_highlighter_brackets_paint()
 {
   local char style
-  local -i bracket_color_size=${#ZSH_HIGHLIGHT_STYLES[(I)bracket-level-*]} buflen=${#BUFFER} level=0 matchingpos pos in_double_quote=0 shell_code_paren_depth=0 backtick_active=0 pending_command_substitution=0
+  local -i bracket_color_size=${#ZSH_HIGHLIGHT_STYLES[(I)bracket-level-*]} buflen=${#BUFFER} level=0 matchingpos pos in_double_quote=0 shell_code_paren_depth=0 backtick_active=0 backtick_double_quote_active=0 pending_command_substitution=0
   local -a shell_code_double_quote_depths
   local -A levelpos lastoflevel matching literal_level literal_levelpos literal_lastoflevel literal_matching
 
@@ -122,6 +122,8 @@ _zsh_highlight_highlighter_brackets_paint()
         ('"')
           if (( shell_code_paren_depth == 0 )); then
             in_double_quote=0
+          elif (( backtick_active )); then
+            backtick_double_quote_active=$(( ! backtick_double_quote_active ))
           elif (( ! backtick_active )); then
             if (( shell_code_double_quote_active )); then
               shell_code_double_quote_depths=("${shell_code_double_quote_depths[1,-2]}")
@@ -142,6 +144,7 @@ _zsh_highlight_highlighter_brackets_paint()
           ;;
         ('`')
           backtick_active=$(( ! backtick_active ))
+          (( backtick_active )) || backtick_double_quote_active=0
           continue
           ;;
       esac
@@ -155,7 +158,9 @@ _zsh_highlight_highlighter_brackets_paint()
         fi
         ;;
       '"')
-        if (( ! backtick_active )); then
+        if (( backtick_active )); then
+          backtick_double_quote_active=$(( ! backtick_double_quote_active ))
+        else
           in_double_quote=1
         fi
         continue
@@ -179,16 +184,28 @@ _zsh_highlight_highlighter_brackets_paint()
         ;;
       '`')
         backtick_active=$(( ! backtick_active ))
+        (( backtick_active )) || backtick_double_quote_active=0
         continue
         ;;
     esac
     case $char in
       ["([{"])
-        if (( in_double_quote )) && (( shell_code_double_quote_active )) && (( ! backtick_active )) && (( ! pending_command_substitution )); then
-          integer current_literal_level=${literal_level[$shell_code_paren_depth]:-0}
+        if (
+             (( in_double_quote )) && (( shell_code_double_quote_active )) && (( ! backtick_active )) && (( ! pending_command_substitution ))
+           ) || (
+             (( backtick_active )) && (( backtick_double_quote_active )) && (( ! pending_command_substitution ))
+           )
+        then
+          local literal_key
+          if (( backtick_active )) && (( backtick_double_quote_active )); then
+            literal_key="backtick:$shell_code_paren_depth"
+          else
+            literal_key="$shell_code_paren_depth"
+          fi
+          integer current_literal_level=${literal_level[$literal_key]:-0}
           literal_levelpos[$pos]=$(( ++current_literal_level ))
-          literal_level[$shell_code_paren_depth]=$current_literal_level
-          literal_lastoflevel[$shell_code_paren_depth:$current_literal_level]=$pos
+          literal_level[$literal_key]=$current_literal_level
+          literal_lastoflevel[$literal_key:$current_literal_level]=$pos
         else
           levelpos[$pos]=$((++level))
           lastoflevel[$level]=$pos
@@ -203,12 +220,23 @@ _zsh_highlight_highlighter_brackets_paint()
         fi
         ;;
       [")]}"])
-        if (( in_double_quote )) && (( shell_code_double_quote_active )) && (( ! backtick_active )); then
-          integer current_literal_level=${literal_level[$shell_code_paren_depth]:-0}
+        if (
+             (( in_double_quote )) && (( shell_code_double_quote_active )) && (( ! backtick_active ))
+           ) || (
+             (( backtick_active )) && (( backtick_double_quote_active ))
+           )
+        then
+          local literal_key
+          if (( backtick_active )) && (( backtick_double_quote_active )); then
+            literal_key="backtick:$shell_code_paren_depth"
+          else
+            literal_key="$shell_code_paren_depth"
+          fi
+          integer current_literal_level=${literal_level[$literal_key]:-0}
           if (( current_literal_level > 0 )); then
-            matchingpos=$literal_lastoflevel[$shell_code_paren_depth:$current_literal_level]
+            matchingpos=$literal_lastoflevel[$literal_key:$current_literal_level]
             literal_levelpos[$pos]=$current_literal_level
-            (( literal_level[$shell_code_paren_depth] = current_literal_level - 1 ))
+            (( literal_level[$literal_key] = current_literal_level - 1 ))
             if _zsh_highlight_brackets_match $matchingpos $pos; then
               literal_matching[$matchingpos]=$pos
               literal_matching[$pos]=$matchingpos
