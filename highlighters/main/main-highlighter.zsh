@@ -313,6 +313,7 @@ _zsh_highlight_main__is_function_name() {
 
 _zsh_highlight_main__starts_function_definition() {
   local current=$1 next
+  integer names_seen=1
   shift
 
   _zsh_highlight_main__is_function_name "$current" || return 1
@@ -321,6 +322,7 @@ _zsh_highlight_main__starts_function_definition() {
     [[ -z $next ]] && break
     case $next in
       ('()')
+        (( names_seen == 1 )) || [[ ${zsyh_user_options[multifuncdef]:-off} == on ]] || return 1
         return 0
         ;;
       ($'\n'|';'|'|'|'||'|'&'|'&&'|'|&'|'&!'|'&|')
@@ -328,6 +330,7 @@ _zsh_highlight_main__starts_function_definition() {
         ;;
       (*)
         _zsh_highlight_main__is_function_name "$next" || return 1
+        (( names_seen++ ))
         ;;
     esac
   done
@@ -1120,6 +1123,10 @@ _zsh_highlight_main_highlighter_highlight_list()
 
       if (( ! in_param )) &&
          ! $saw_assignment &&
+         (
+           [[ ${args[1]:-} == '()' ]] ||
+           [[ ${zsyh_user_options[multifuncdef]:-off} == on ]]
+         ) &&
          _zsh_highlight_main__starts_function_definition "$arg" "${args[@]}"
       then
         style=function
@@ -1767,6 +1774,7 @@ _zsh_highlight_main_highlighter_highlight_parameter_expansion()
   integer arg1=$1 complex_only=${2:-0} i subject_start operator_len closed=1 end_idx=0
   local quote_context=${3:-unquoted}
   local parser_state=subject
+  integer substring_operator=0
   local -a match mbegin mend saved_reply highlights
   local MATCH; integer MBEGIN MEND
   reply=()
@@ -1821,11 +1829,16 @@ _zsh_highlight_main_highlighter_highlight_parameter_expansion()
         fi
         ;;
       ':')
-        if [[ $parser_state == subject ]]; then
+        if [[ $parser_state == subject || ( $parser_state == rhs && substring_operator ) ]]; then
+          integer substring_continuation=$substring_operator
           operator_len=0
-          if [[ $arg[$(( i + 1 ))] == ':' && $arg[$(( i + 2 ))] == '=' ]]; then
+          if [[ $parser_state == subject ]] &&
+             [[ $arg[$(( i + 1 ))] == ':' && $arg[$(( i + 2 ))] == '=' ]]
+          then
             operator_len=3
-          elif [[ $arg[$(( i + 1 ))] == [\-+=?\#\*\|\^] ]]; then
+          elif [[ $parser_state == subject ]] &&
+               [[ $arg[$(( i + 1 ))] == [\-+=?\#\*\|\^] ]]
+          then
             operator_len=2
             if [[ $arg[$(( i + 1 ))] == '^' && $arg[$(( i + 2 ))] == '^' ]]; then
               operator_len=3
@@ -1837,6 +1850,11 @@ _zsh_highlight_main_highlighter_highlight_parameter_expansion()
           if (( operator_len )); then
             highlights+=($(( start_pos + i - 1 )) $(( start_pos + i + operator_len - 1 )) parameter-expansion-operator)
             parser_state=rhs
+            if (( operator_len == 1 )); then
+              substring_operator=$(( ! substring_continuation ))
+            else
+              substring_operator=0
+            fi
             (( i += operator_len ))
             continue
           fi
@@ -1847,6 +1865,7 @@ _zsh_highlight_main_highlighter_highlight_parameter_expansion()
         (( i = REPLY ))
         highlights=($saved_reply $reply)
         parser_state=modifier
+        substring_operator=0
         (( i++ ))
         continue
         ;;
@@ -1864,6 +1883,7 @@ _zsh_highlight_main_highlighter_highlight_parameter_expansion()
           fi
           highlights+=($(( start_pos + i - 1 )) $(( start_pos + i + operator_len - 1 )) parameter-expansion-operator)
           parser_state=rhs
+          substring_operator=0
           (( i += operator_len ))
           continue
         fi
@@ -1877,6 +1897,7 @@ _zsh_highlight_main_highlighter_highlight_parameter_expansion()
           highlights+=($(( start_pos + i - 1 )) $(( start_pos + i + operator_len - 1 )) parameter-expansion-flag)
           (( i += operator_len ))
           subject_start=$i
+          substring_operator=0
           continue
         fi
         ;;
