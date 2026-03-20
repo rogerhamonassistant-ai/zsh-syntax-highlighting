@@ -54,7 +54,9 @@ _zsh_highlight_brackets_skip_quoted_region()
     case $mode in
       (single)
         if [[ $char == "'" ]]; then
-          if [[ -o rcquotes ]] && [[ $BUFFER[$(( pos + 1 ))] == "'" ]]; then
+          if [[ ${zsyh_user_options[rcquotes]:-off} == on || -o rcquotes ]] &&
+             [[ $BUFFER[$(( pos + 1 ))] == "'" ]]
+          then
             (( pos += 2 ))
             continue
           fi
@@ -96,7 +98,9 @@ _zsh_highlight_highlighter_brackets_paint()
     if (( in_double_quote )); then
       case $char in
         ('\\')
-          (( pos++ ))
+          if [[ \\\`\"\$${histchars[1]} == *$BUFFER[$(( pos + 1 ))]* ]]; then
+            (( pos++ ))
+          fi
           continue
           ;;
         ('"')
