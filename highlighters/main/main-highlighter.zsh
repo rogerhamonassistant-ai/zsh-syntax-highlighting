@@ -348,6 +348,42 @@ _zsh_highlight_main__starts_function_definition() {
   return 1
 }
 
+_zsh_highlight_main__raw_starts_newline_function_parens() {
+  local raw=$1
+  integer i=1 saw_newline=0
+
+  while (( i <= $#raw )); do
+    case $raw[$i] in
+      (' '|$'\t')
+        (( i++ ))
+        continue
+        ;;
+      ($'\n')
+        saw_newline=1
+        (( i++ ))
+        continue
+        ;;
+      ($histchars[3])
+        if (( saw_newline )) && [[ ${zsyh_user_options[interactivecomments]:-off} == on ]]; then
+          while (( i <= $#raw )) && [[ $raw[$i] != $'\n' ]]; do
+            (( i++ ))
+          done
+          continue
+        fi
+        return 1
+        ;;
+    esac
+
+    if (( saw_newline )) && [[ $raw[$i,$(( i + 1 ))] == '()' ]]; then
+      return 0
+    fi
+
+    return 1
+  done
+
+  return 1
+}
+
 _zsh_highlight_main__precommand_target_mode() {
   case "$1" in
     (builtin)
@@ -904,7 +940,7 @@ _zsh_highlight_main_highlighter_highlight_list()
     #
     # We use the (Z+c+) flag so the entire comment is presented as one token in $arg.
     if [[ $zsyh_user_options[interactivecomments] == on && $arg[1] == $histchars[3] ]]; then
-      if [[ $this_word == *(':regular:'|':start:')* ]]; then
+      if [[ $this_word == *(':regular:'|':start:'|':lookup_subject:'|':sudo_opt:'|':function_header:'|':function_header_named:'|':function_header_after_newline:'|':function_body_pending:'|':function_name_list:')* ]]; then
         style=comment
       else
         style=unknown-token # prematurely terminated
@@ -1118,7 +1154,7 @@ _zsh_highlight_main_highlighter_highlight_list()
           next_word=':function_header_named:'
         elif [[ $arg == '()' ]]; then
           style=reserved-word
-          next_word=':start::start_of_pipeline:'
+          next_word=':function_body_pending:'
         elif [[ $arg == $'\x7b' ]]; then
           style=reserved-word
           braces_stack='Y'"$braces_stack"
@@ -1137,7 +1173,10 @@ _zsh_highlight_main_highlighter_highlight_list()
           next_word=':function_header_named:'
         elif [[ $arg == '()' ]]; then
           style=reserved-word
-          next_word=':start::start_of_pipeline:'
+          next_word=':function_body_pending:'
+        elif [[ $arg == ';' ]]; then
+          style=commandseparator
+          next_word=':function_body_pending:'
         elif [[ $arg == $'\x7b' ]]; then
           style=reserved-word
           braces_stack='Y'"$braces_stack"
@@ -1153,7 +1192,23 @@ _zsh_highlight_main_highlighter_highlight_list()
           next_word=':function_header_after_newline:'
         elif [[ $arg == '()' ]]; then
           style=reserved-word
+          next_word=':function_body_pending:'
+        elif [[ $arg == ';' ]]; then
+          style=commandseparator
+          next_word=':function_body_pending:'
+        elif [[ $arg == $'\x7b' ]]; then
+          style=reserved-word
+          braces_stack='Y'"$braces_stack"
           next_word=':start::start_of_pipeline:'
+        else
+          style=unknown-token
+        fi
+        _zsh_highlight_main_add_region_highlight $start_pos $end_pos $style
+        continue
+      elif [[ $this_word == *':function_body_pending:'* ]]; then
+        if [[ $arg == $'\n' || $arg == ';' ]]; then
+          style=commandseparator
+          next_word=':function_body_pending:'
         elif [[ $arg == $'\x7b' ]]; then
           style=reserved-word
           braces_stack='Y'"$braces_stack"
@@ -1210,6 +1265,8 @@ _zsh_highlight_main_highlighter_highlight_list()
         style=commandseparator
       elif [[ $this_word == *':function_header_after_newline:'* ]]; then
         style=commandseparator
+      elif [[ $this_word == *':function_body_pending:'* ]]; then
+        style=commandseparator
       elif [[ $this_word == *':function_name_list:'* ]]; then
         style=commandseparator
       elif [[ $this_word == *':start:'* ]] && [[ $arg == $'\n' ]]; then
@@ -1238,6 +1295,8 @@ _zsh_highlight_main_highlighter_highlight_list()
         next_word=':function_header_after_newline:'
       elif [[ $arg == $'\n' ]] && [[ $this_word == *':function_header_after_newline:'* ]]; then
         next_word=':function_header_after_newline:'
+      elif [[ $arg == $'\n' ]] && [[ $this_word == *':function_body_pending:'* ]]; then
+        next_word=':function_body_pending:'
       elif [[ $arg == $'\n' ]] && [[ $this_word == *':function_name_list:'* ]]; then
         next_word=':function_name_list:'
       elif [[ $arg == ';' ]] && $in_array_assignment; then
@@ -1275,19 +1334,27 @@ _zsh_highlight_main_highlighter_highlight_list()
       fi
 
       local -a function_lookahead
+      local raw_newline_function_parens=false
       function_lookahead=( "${args[@]}" )
       if [[ ${function_lookahead[1]:-} == ';' ]] && [[ $proc_buf[1] == $'\n' ]]; then
         function_lookahead[1]=$'\n'
       fi
+      _zsh_highlight_main__raw_starts_newline_function_parens "$proc_buf" && raw_newline_function_parens=true
 
       if (( ! in_param )) &&
+         [[ $arg != function ]] &&
          ! $saw_assignment &&
          (
-           [[ ${function_lookahead[1]:-} == '()' ]] ||
-           [[ ${function_lookahead[1]:-} == $'\n' ]] ||
-           [[ ${zsyh_user_options[multifuncdef]:-off} == on ]]
-         ) &&
-         _zsh_highlight_main__starts_function_definition "$arg" "${function_lookahead[@]}"
+           $raw_newline_function_parens ||
+           (
+             (
+               [[ ${function_lookahead[1]:-} == '()' ]] ||
+               [[ ${function_lookahead[1]:-} == $'\n' ]] ||
+               [[ ${zsyh_user_options[multifuncdef]:-off} == on ]]
+             ) &&
+             _zsh_highlight_main__starts_function_definition "$arg" "${function_lookahead[@]}"
+           )
+         )
       then
         style=function
         next_word=':function_name_list:'
@@ -2244,13 +2311,14 @@ _zsh_highlight_main_highlighter_highlight_glob_qualifiers()
   for (( i = tail_index; i <= $#block_starts; i++ )); do
     body=$arg[$(( block_starts[i] + 1 )),$(( block_ends[i] - 1 ))]
     if [[ $body == '#q'* ]]; then
+      [[ ${zsyh_user_options[extendedglob]:-off} == on ]] || return 1
       reply+=(
         $(( start_pos + block_starts[i] - 1 )) $(( start_pos + block_ends[i] )) glob-qualifier
         $(( start_pos + block_starts[i] - 1 )) $(( start_pos + block_starts[i] )) glob-qualifier-delimiter
         $(( start_pos + block_starts[i] )) $(( start_pos + block_starts[i] + 2 )) glob-qualifier-flag
         $(( start_pos + block_ends[i] - 1 )) $(( start_pos + block_ends[i] )) glob-qualifier-delimiter
       )
-    elif [[ $body != *'|'* && $body != *[[:blank:]]* ]]; then
+    elif [[ $body != *'|'* && $body != *'('* && $body != *'~'* && $body != *[[:blank:]]* ]]; then
       reply+=(
         $(( start_pos + block_starts[i] - 1 )) $(( start_pos + block_ends[i] )) glob-qualifier
         $(( start_pos + block_starts[i] - 1 )) $(( start_pos + block_starts[i] )) glob-qualifier-delimiter
