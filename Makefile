@@ -45,8 +45,9 @@ test:
 			: $$(( result |= $$? )); \
 		fi \
 	done; \
-	if [ -f .git/local-tests/test-no-private-details.zsh ]; then \
-		$(ZSH) -f .git/local-tests/test-no-private-details.zsh; \
+	hook_path=`git rev-parse --git-path local-tests/test-no-private-details.zsh 2>/dev/null || true`; \
+	if [ -n "$$hook_path" ] && [ -f "$$hook_path" ]; then \
+		$(ZSH) -f "$$hook_path"; \
 		: $$(( result |= $$? )); \
 	fi; \
 	exit $$result
