@@ -384,6 +384,19 @@ _zsh_highlight_main__raw_starts_newline_function_parens() {
   return 1
 }
 
+_zsh_highlight_main__paired_delimiter_closer() {
+  case $1 in
+    ('[') REPLY=']' ;;
+    ('{') REPLY='}' ;;
+    ('<') REPLY='>' ;;
+    (*) REPLY=$1 ;;
+  esac
+}
+
+_zsh_highlight_main__is_literal_function_name() {
+  [[ $1 == [A-Za-z_][A-Za-z0-9_-]# ]]
+}
+
 _zsh_highlight_main__precommand_target_mode() {
   case "$1" in
     (builtin)
@@ -1214,10 +1227,12 @@ _zsh_highlight_main_highlighter_highlight_list()
           braces_stack='Y'"$braces_stack"
           next_word=':start::start_of_pipeline:'
         else
-          style=unknown-token
+          this_word=':start::start_of_pipeline:'
         fi
-        _zsh_highlight_main_add_region_highlight $start_pos $end_pos $style
-        continue
+        if [[ $this_word == *':function_body_pending:'* ]]; then
+          _zsh_highlight_main_add_region_highlight $start_pos $end_pos $style
+          continue
+        fi
       elif [[ $this_word == *':function_name_list:'* ]]; then
         if [[ $arg == $'\n' ]]; then
           style=commandseparator
@@ -1345,7 +1360,7 @@ _zsh_highlight_main_highlighter_highlight_list()
          [[ $arg != function ]] &&
          ! $saw_assignment &&
          (
-           $raw_newline_function_parens ||
+           ( $raw_newline_function_parens && _zsh_highlight_main__is_literal_function_name "$arg" ) ||
            (
              (
                [[ ${function_lookahead[1]:-} == '()' ]] ||
@@ -1876,7 +1891,7 @@ _zsh_highlight_main_highlighter_highlight_parameter_paren_block()
 {
   integer arg1=$1 i=$1 depth=1 closed=1
   local body_style=$2 delim_style=$3 quote_context=${4:-unquoted}
-  local block_delim
+  local block_delim block_end_delim
   local -a saved_reply
   reply=()
 
@@ -1889,6 +1904,8 @@ _zsh_highlight_main_highlighter_highlight_parameter_paren_block()
        [[ $arg[$(( i + 1 ))] != '(' ]]
     then
       block_delim=$arg[$(( i + 1 ))]
+      _zsh_highlight_main__paired_delimiter_closer "$block_delim"
+      block_end_delim=$REPLY
       (( i += 2 ))
       while (( i <= $#arg )); do
         case "$arg[$i]" in
@@ -1906,7 +1923,7 @@ _zsh_highlight_main_highlighter_highlight_parameter_paren_block()
             fi
             ;;
         esac
-        [[ $arg[$i] == $block_delim ]] && break
+        [[ $arg[$i] == $block_end_delim ]] && break
         (( i++ ))
       done
       (( i > $#arg )) && break
@@ -1951,7 +1968,7 @@ _zsh_highlight_main_highlighter_highlight_parameter_modifier()
   integer arg1=$1 i=$1
   local quote_context=${2:-unquoted}
   integer s_index delimiter_hits=0
-  local modifier_delim
+  local modifier_delim modifier_end_delim
   local -a saved_reply
   reply=()
 
@@ -1959,12 +1976,16 @@ _zsh_highlight_main_highlighter_highlight_parameter_modifier()
     s_index=$(( arg1 + 1 ))
   elif [[ $arg[$(( arg1 + 1 ))] == 'g' && $arg[$(( arg1 + 2 ))] == 's' ]]; then
     s_index=$(( arg1 + 2 ))
+  elif [[ $arg[$(( arg1 + 1 ))] == [FW] ]]; then
+    s_index=$(( arg1 + 1 ))
   else
     s_index=0
   fi
 
   if (( s_index > 0 )) && (( s_index < $#arg )); then
     modifier_delim=$arg[$(( s_index + 1 ))]
+    _zsh_highlight_main__paired_delimiter_closer "$modifier_delim"
+    modifier_end_delim=$REPLY
     if [[ -n $modifier_delim && $modifier_delim != '}' ]]; then
       i=$(( s_index + 2 ))
       while (( i <= $#arg )); do
@@ -1983,7 +2004,7 @@ _zsh_highlight_main_highlighter_highlight_parameter_modifier()
             fi
             ;;
         esac
-        if [[ $arg[$i] == $modifier_delim ]]; then
+        if [[ $arg[$i] == $modifier_end_delim ]]; then
           (( ++delimiter_hits ))
           (( delimiter_hits == 2 )) && break
         elif [[ $arg[$i] == '}' ]]; then
@@ -2318,7 +2339,7 @@ _zsh_highlight_main_highlighter_highlight_glob_qualifiers()
         $(( start_pos + block_starts[i] )) $(( start_pos + block_starts[i] + 2 )) glob-qualifier-flag
         $(( start_pos + block_ends[i] - 1 )) $(( start_pos + block_ends[i] )) glob-qualifier-delimiter
       )
-    elif [[ $body != *'|'* && $body != *'('* && $body != *'~'* && $body != *[[:blank:]]* ]]; then
+    elif [[ $body != *'|'* && $body != *'('* && $body != *[[:blank:]]* ]]; then
       reply+=(
         $(( start_pos + block_starts[i] - 1 )) $(( start_pos + block_ends[i] )) glob-qualifier
         $(( start_pos + block_starts[i] - 1 )) $(( start_pos + block_starts[i] )) glob-qualifier-delimiter
@@ -2488,7 +2509,7 @@ _zsh_highlight_main_highlighter_highlight_argument()
   if $highlight_glob &&
      $qualifier_candidate &&
      (
-       ( $bare_qualifier_allowed && ( $globbing_seen || [[ $arg =~ '\([^()|~]*\)$' ]] ) ) ||
+       ( $bare_qualifier_allowed && ( $globbing_seen || [[ $arg =~ '\([^()|]*\)$' ]] ) ) ||
        ( $explicit_qualifier_allowed && [[ $arg == *'(#q'*')' ]] )
      )
   then
