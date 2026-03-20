@@ -88,30 +88,32 @@ _zsh_highlight_brackets_skip_quoted_region()
 _zsh_highlight_highlighter_brackets_paint()
 {
   local char style
-  local -i bracket_color_size=${#ZSH_HIGHLIGHT_STYLES[(I)bracket-level-*]} buflen=${#BUFFER} level=0 matchingpos pos in_double_quote=0 shell_code_paren_depth=0 pending_command_substitution=0
-  local -a shell_code_double_quote_depths shell_code_double_quote_base_levels
-  local -A levelpos lastoflevel matching
+  local -i bracket_color_size=${#ZSH_HIGHLIGHT_STYLES[(I)bracket-level-*]} buflen=${#BUFFER} level=0 matchingpos pos in_double_quote=0 shell_code_paren_depth=0 backtick_active=0 pending_command_substitution=0
+  local -a shell_code_double_quote_depths
+  local -A levelpos lastoflevel matching literal_level literal_levelpos literal_lastoflevel literal_matching
 
   # Find all brackets and remember which one is matching
   pos=0
   while (( ++pos <= buflen )); do
     char=$BUFFER[$pos]
     integer shell_code_double_quote_active=0
-    integer shell_code_double_quote_current_base_level=0
     if (( $#shell_code_double_quote_depths )) && (( shell_code_double_quote_depths[-1] == shell_code_paren_depth )); then
       shell_code_double_quote_active=1
-      shell_code_double_quote_current_base_level=$shell_code_double_quote_base_levels[-1]
     fi
     if (( in_double_quote )); then
       case $char in
         ('\\')
-          if [[ \\\`\"\$${histchars[1]} == *$BUFFER[$(( pos + 1 ))]* ]]; then
+          if (( backtick_active )); then
+            if [[ \\\`\$ == *$BUFFER[$(( pos + 1 ))]* ]]; then
+              (( pos++ ))
+            fi
+          elif [[ \\\`\"\$${histchars[1]} == *$BUFFER[$(( pos + 1 ))]* ]]; then
             (( pos++ ))
           fi
           continue
           ;;
         ("'")
-          if (( shell_code_paren_depth > 0 )) && (( ! shell_code_double_quote_active )); then
+          if (( shell_code_paren_depth > 0 )) && (( ! shell_code_double_quote_active )) && (( ! backtick_active )); then
             _zsh_highlight_brackets_skip_quoted_region single $(( pos + 1 ))
             pos=$REPLY
             continue
@@ -120,23 +122,17 @@ _zsh_highlight_highlighter_brackets_paint()
         ('"')
           if (( shell_code_paren_depth == 0 )); then
             in_double_quote=0
-          else
+          elif (( ! backtick_active )); then
             if (( shell_code_double_quote_active )); then
-              while (( level > shell_code_double_quote_base_levels[-1] )); do
-                unset "lastoflevel[$level]"
-                (( level-- ))
-              done
               shell_code_double_quote_depths=("${shell_code_double_quote_depths[1,-2]}")
-              shell_code_double_quote_base_levels=("${shell_code_double_quote_base_levels[1,-2]}")
             else
               shell_code_double_quote_depths+=($shell_code_paren_depth)
-              shell_code_double_quote_base_levels+=($level)
             fi
           fi
           continue
           ;;
         ('$')
-          if (( shell_code_paren_depth > 0 )) && (( ! shell_code_double_quote_active )) && [[ $BUFFER[$(( pos + 1 ))] == "'" ]]; then
+          if (( shell_code_paren_depth > 0 )) && (( ! shell_code_double_quote_active )) && (( ! backtick_active )) && [[ $BUFFER[$(( pos + 1 ))] == "'" ]]; then
             _zsh_highlight_brackets_skip_quoted_region dollar-single $(( pos + 2 ))
             pos=$REPLY
             continue
@@ -144,48 +140,82 @@ _zsh_highlight_highlighter_brackets_paint()
             pending_command_substitution=1
           fi
           ;;
+        ('`')
+          backtick_active=$(( ! backtick_active ))
+          continue
+          ;;
       esac
     fi
     case $char in
       "'")
-        if (( ! in_double_quote )); then
+        if (( backtick_active || ! in_double_quote )); then
           _zsh_highlight_brackets_skip_quoted_region single $(( pos + 1 ))
           pos=$REPLY
           continue
         fi
         ;;
       '"')
-        in_double_quote=1
+        if (( ! backtick_active )); then
+          in_double_quote=1
+        fi
         continue
         ;;
       '$')
-        if (( ! in_double_quote )) && [[ $BUFFER[$(( pos + 1 ))] == "'" ]]; then
+        if (( backtick_active || ! in_double_quote )) && [[ $BUFFER[$(( pos + 1 ))] == "'" ]]; then
           _zsh_highlight_brackets_skip_quoted_region dollar-single $(( pos + 2 ))
           pos=$REPLY
           continue
         fi
         ;;
       "\\")
-        (( pos++ ))
+        if (( backtick_active )); then
+          if [[ \\\`\$ == *$BUFFER[$(( pos + 1 ))]* ]]; then
+            (( pos++ ))
+          fi
+        else
+          (( pos++ ))
+        fi
+        continue
+        ;;
+      '`')
+        backtick_active=$(( ! backtick_active ))
         continue
         ;;
     esac
     case $char in
       ["([{"])
-        levelpos[$pos]=$((++level))
-        lastoflevel[$level]=$pos
-        if (( in_double_quote )); then
-          if (( pending_command_substitution )) && [[ $char == '(' ]]; then
-            (( shell_code_paren_depth++ ))
-            pending_command_substitution=0
-          elif (( shell_code_paren_depth > 0 )) && [[ $char == '(' ]] && (( ! shell_code_double_quote_active )); then
-            (( shell_code_paren_depth++ ))
+        if (( in_double_quote )) && (( shell_code_double_quote_active )) && (( ! backtick_active )) && (( ! pending_command_substitution )); then
+          integer current_literal_level=${literal_level[$shell_code_paren_depth]:-0}
+          literal_levelpos[$pos]=$(( ++current_literal_level ))
+          literal_level[$shell_code_paren_depth]=$current_literal_level
+          literal_lastoflevel[$shell_code_paren_depth:$current_literal_level]=$pos
+        else
+          levelpos[$pos]=$((++level))
+          lastoflevel[$level]=$pos
+          if (( in_double_quote )); then
+            if (( pending_command_substitution )) && [[ $char == '(' ]]; then
+              (( shell_code_paren_depth++ ))
+              pending_command_substitution=0
+            elif (( shell_code_paren_depth > 0 )) && [[ $char == '(' ]] && (( ! shell_code_double_quote_active )) && (( ! backtick_active )); then
+              (( shell_code_paren_depth++ ))
+            fi
           fi
         fi
         ;;
       [")]}"])
-        if (( shell_code_double_quote_active )) && (( level <= shell_code_double_quote_current_base_level )); then
-          levelpos[$pos]=-1
+        if (( in_double_quote )) && (( shell_code_double_quote_active )) && (( ! backtick_active )); then
+          integer current_literal_level=${literal_level[$shell_code_paren_depth]:-0}
+          if (( current_literal_level > 0 )); then
+            matchingpos=$literal_lastoflevel[$shell_code_paren_depth:$current_literal_level]
+            literal_levelpos[$pos]=$current_literal_level
+            (( literal_level[$shell_code_paren_depth] = current_literal_level - 1 ))
+            if _zsh_highlight_brackets_match $matchingpos $pos; then
+              literal_matching[$matchingpos]=$pos
+              literal_matching[$pos]=$matchingpos
+            fi
+          else
+            literal_levelpos[$pos]=-1
+          fi
         elif (( level > 0 )); then
           matchingpos=$lastoflevel[$level]
           levelpos[$pos]=$((level--))
@@ -196,7 +226,7 @@ _zsh_highlight_highlighter_brackets_paint()
         else
           levelpos[$pos]=-1
         fi
-        if (( in_double_quote )) && (( shell_code_paren_depth > 0 )) && [[ $char == ')' ]] && (( ! shell_code_double_quote_active )); then
+        if (( in_double_quote )) && (( shell_code_paren_depth > 0 )) && [[ $char == ')' ]] && (( ! shell_code_double_quote_active )) && (( ! backtick_active )); then
           (( shell_code_paren_depth-- ))
         fi
         ;;
@@ -213,12 +243,24 @@ _zsh_highlight_highlighter_brackets_paint()
       _zsh_highlight_add_highlight $((pos - 1)) $pos bracket-error
     fi
   done
+  for pos in ${(k)literal_levelpos}; do
+    if (( $+literal_matching[$pos] )); then
+      if (( bracket_color_size )); then
+        _zsh_highlight_add_highlight $((pos - 1)) $pos bracket-level-$(( (literal_levelpos[$pos] - 1) % bracket_color_size + 1 ))
+      fi
+    else
+      _zsh_highlight_add_highlight $((pos - 1)) $pos bracket-error
+    fi
+  done
 
   # If cursor is on a bracket, then highlight corresponding bracket, if any.
   if [[ $WIDGET != zle-line-finish ]]; then
     pos=$((CURSOR + 1))
     if (( $+levelpos[$pos] )) && (( $+matching[$pos] )); then
       local -i otherpos=$matching[$pos]
+      _zsh_highlight_add_highlight $((otherpos - 1)) $otherpos cursor-matchingbracket
+    elif (( $+literal_levelpos[$pos] )) && (( $+literal_matching[$pos] )); then
+      local -i otherpos=$literal_matching[$pos]
       _zsh_highlight_add_highlight $((otherpos - 1)) $otherpos cursor-matchingbracket
     fi
   fi
