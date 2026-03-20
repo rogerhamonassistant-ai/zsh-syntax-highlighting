@@ -62,16 +62,12 @@ _zsh_highlight_brackets_skip_quoted_region()
           return 0
         fi
         ;;
-      (double|dollar-single)
+      (dollar-single)
         if [[ $char == '\' ]]; then
           (( pos += 2 ))
           continue
         fi
         case $mode:$char in
-          (double:'"')
-            REPLY=$pos
-            return 0
-            ;;
           (dollar-single:"'")
             REPLY=$pos
             return 0
@@ -100,11 +96,6 @@ _zsh_highlight_highlighter_brackets_paint()
     case $char in
       "'")
         _zsh_highlight_brackets_skip_quoted_region single $(( pos + 1 ))
-        pos=$REPLY
-        continue
-        ;;
-      '"')
-        _zsh_highlight_brackets_skip_quoted_region double $(( pos + 1 ))
         pos=$REPLY
         continue
         ;;
