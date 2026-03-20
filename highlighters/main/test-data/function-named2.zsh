@@ -31,9 +31,9 @@
 BUFFER='f g h () pwd'
 
 expected_region_highlight=(
-  '1 1 TBD "issue #223"' # f
-  '3 3 TBD "issue #223"' # g
-  '5 5 TBD "issue #223"' # h
+  '1 1 function' # f
+  '3 3 function' # g
+  '5 5 function' # h
   '7 8 reserved-word' # ()
   '10 12 builtin' # pwd
 )

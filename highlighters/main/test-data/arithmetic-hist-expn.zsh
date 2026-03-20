@@ -34,5 +34,5 @@ expected_region_highlight=(
   '1 1 builtin' # :
   '3 11 default' # $(( !! ))
   '3 11 arithmetic-expansion' # $(( !! ))
-  '7 8 history-expansion "issue #713"' # !!
+  '7 8 history-expansion' # !!
 )

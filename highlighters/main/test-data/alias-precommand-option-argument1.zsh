@@ -37,6 +37,6 @@ BUFFER='sudo_u phy1729 echo foo'
 expected_region_highlight=(
   '1 6 alias' # sudo_u
   '8 14 default' # phy1729
-  '17 19 command "issue #540"' # echo (not builtin)
+  '16 19 command' # echo
   '21 23 default' # foo
 )

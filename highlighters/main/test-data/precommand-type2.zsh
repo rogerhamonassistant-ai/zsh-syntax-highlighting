@@ -47,9 +47,9 @@ expected_region_highlight=(
 
   '25 31 precommand' # builtin
   '33 39 precommand' # command
-  '41 46 unknown-token "issue #608"' # zstyle
+  '41 46 unknown-token' # zstyle
   '47 47 commandseparator' # ;
 
   '49 52 precommand' # nice
-  '54 59 unknown-token "issue #608"' # zstyle
+  '54 59 unknown-token' # zstyle
 )

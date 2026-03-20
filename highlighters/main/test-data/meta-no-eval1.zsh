@@ -29,6 +29,7 @@
 # -------------------------------------------------------------------------------------------------
 
 BUFFER=$': $(kill -9 $$) ${:-$(kill -9 $$)}'
+unsorted=1
 
 expected_region_highlight=(
   '1 1 builtin' # :
@@ -40,10 +41,14 @@ expected_region_highlight=(
   '13 14 default' # $$
   '15 15 command-substitution-delimiter-unquoted' # )
   '17 34 default' # ${:-$(kill -9 $$)}
+  '17 34 parameter-expansion' # ${:-$(kill -9 $$)}
+  '18 18 parameter-expansion-delimiter' # {
+  '19 20 parameter-expansion-operator' # :-
   '21 33 command-substitution-unquoted' # $(kill -9 $$)
   '21 22 command-substitution-delimiter-unquoted' # $(
   '23 26 builtin' # kill
   '28 29 single-hyphen-option' # -9
   '31 32 default' # $$
   '33 33 command-substitution-delimiter-unquoted' # )
+  '34 34 parameter-expansion-delimiter' # }
 )

@@ -32,6 +32,6 @@ BUFFER=$'nice x=y ls'
 
 expected_region_highlight=(
   '1 4 precommand' # nice
-  '6 8 unknown-token "issue #641.5"' # x=y
-  '10 11 default "issue #641.5 (fallout)"' # ls
+  '6 8 unknown-token' # x=y
+  '10 11 default' # ls
 )

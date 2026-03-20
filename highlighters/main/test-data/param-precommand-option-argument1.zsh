@@ -37,6 +37,6 @@ BUFFER='$sudo_u phy1729 echo foo'
 expected_region_highlight=(
   '1 7 precommand' # $sudo_u
   '9 15 default' # phy1729
-  '18 20 command "issue #540"' # echo (not builtin)
+  '17 20 command' # echo
   '22 24 default' # foo
 )

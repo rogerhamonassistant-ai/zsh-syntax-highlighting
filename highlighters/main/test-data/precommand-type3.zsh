@@ -42,7 +42,7 @@ expected_region_highlight=(
   '7 7 commandseparator' # ;
 
   '9 15 precommand' # builtin
-  '17 18 unknown-token "issue #608"' # ls
+  '17 18 unknown-token' # ls
   '23 23 commandseparator' # ;
 
   '25 31 precommand' # builtin
