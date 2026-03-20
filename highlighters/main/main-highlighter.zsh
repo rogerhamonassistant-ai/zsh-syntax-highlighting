@@ -1704,8 +1704,55 @@ _zsh_highlight_main_highlighter_highlight_parameter_modifier()
 {
   integer arg1=$1 i=$1
   local quote_context=${2:-unquoted}
+  integer s_index delimiter_hits=0
+  local modifier_delim
   local -a saved_reply
   reply=()
+
+  if [[ $arg[$(( arg1 + 1 ))] == 's' ]]; then
+    s_index=$(( arg1 + 1 ))
+  elif [[ $arg[$(( arg1 + 1 ))] == 'g' && $arg[$(( arg1 + 2 ))] == 's' ]]; then
+    s_index=$(( arg1 + 2 ))
+  else
+    s_index=0
+  fi
+
+  if (( s_index > 0 )) && (( s_index < $#arg )); then
+    modifier_delim=$arg[$(( s_index + 1 ))]
+    if [[ -n $modifier_delim && $modifier_delim != '}' ]]; then
+      i=$(( s_index + 2 ))
+      while (( i <= $#arg )); do
+        case "$arg[$i]" in
+          "\\")
+            (( i += 2 ))
+            continue
+            ;;
+          '$' | "'" | '"' | '`')
+            saved_reply=($reply)
+            if _zsh_highlight_main_highlighter_highlight_nested_construct $i 0 $quote_context; then
+              (( i = REPLY ))
+              reply=($saved_reply $reply)
+              (( i++ ))
+              continue
+            fi
+            ;;
+        esac
+        if [[ $arg[$i] == $modifier_delim ]]; then
+          (( ++delimiter_hits ))
+          (( delimiter_hits == 2 )) && break
+        elif [[ $arg[$i] == '}' ]]; then
+          (( i-- ))
+          break
+        fi
+        (( i++ ))
+      done
+      if (( delimiter_hits == 2 )); then
+        reply=($(( start_pos + arg1 - 1 )) $(( start_pos + i )) parameter-expansion-modifier $reply)
+        REPLY=$i
+        return 0
+      fi
+    fi
+  fi
 
   while (( ++i <= $#arg )); do
     case "$arg[$i]" in
@@ -1886,7 +1933,7 @@ _zsh_highlight_main_highlighter_highlight_parameter_expansion()
         (( i++ ))
         continue
         ;;
-      '#' | '%' | '/')
+      '#' | '%' | '/' | '+' | '=')
         if [[ $parser_state == subject ]]; then
           if [[ $arg[$i] == '#' && i == subject_start ]]; then
             highlights+=($(( start_pos + i - 1 )) $(( start_pos + i )) parameter-expansion-operator)
@@ -2158,7 +2205,7 @@ _zsh_highlight_main_highlighter_highlight_argument()
 
   if $globbing_seen ||
      [[ $arg == *'(#q'*')' ]] ||
-     [[ $arg =~ '\(([A-Z]|[./@*=])([A-Z]|[./@*=])*\)$' ]]
+     [[ $arg =~ '\(([NDomn]|[./@*=])([A-Zomnh0-9,+-]|[./@*=])*\)$' ]]
   then
     if _zsh_highlight_main_highlighter_highlight_glob_qualifiers; then
       highlights+=($reply)
