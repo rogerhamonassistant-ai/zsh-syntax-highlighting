@@ -944,6 +944,9 @@ _zsh_highlight_main_highlighter_highlight_list()
         precommand_mode_marker=':precommand_target_external:'
       fi
       if [[ $this_word == *':sudo_opt:'* ]]; then
+        if [[ $this_word == *':precommand_name_command:'* ]] && [[ $arg == -*[vV]* ]]; then
+          precommand_mode_marker=''
+        fi
         if [[ -n $flags_with_argument ]] &&
            { 
              # Trenary
@@ -1142,6 +1145,7 @@ _zsh_highlight_main_highlighter_highlight_list()
             next_word+=':precommand_target_external:'
             ;;
         esac
+        [[ $arg == command ]] && next_word+=':precommand_name_command:'
         if [[ $arg == 'exec' || $arg == 'env' ]]; then
           # To allow "exec 2>&1;" and "env | grep" where there's no command word
           next_word+=':regular:'
@@ -2114,7 +2118,10 @@ _zsh_highlight_main_highlighter_highlight_argument()
     esac
   done
 
-  if $globbing_seen; then
+  if $globbing_seen ||
+     [[ $arg == *'(#q'*')' ]] ||
+     [[ $arg =~ '\(([A-Z]|[./@*=])([A-Z]|[./@*=])*\)$' ]]
+  then
     if _zsh_highlight_main_highlighter_highlight_glob_qualifiers; then
       highlights+=($reply)
     fi
