@@ -45,8 +45,8 @@ test:
 			: $$(( result |= $$? )); \
 		fi \
 	done; \
-	if [ -f local-tests/test-no-private-details.zsh ]; then \
-		$(ZSH) -f local-tests/test-no-private-details.zsh; \
+	if [ -f .git/local-tests/test-no-private-details.zsh ]; then \
+		$(ZSH) -f .git/local-tests/test-no-private-details.zsh; \
 		: $$(( result |= $$? )); \
 	fi; \
 	exit $$result
