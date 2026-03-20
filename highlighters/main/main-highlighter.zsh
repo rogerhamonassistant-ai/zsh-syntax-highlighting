@@ -328,11 +328,14 @@ _zsh_highlight_main__starts_function_definition() {
   for next in "$@"; do
     [[ -z $next ]] && break
     case $next in
+      ($'\n')
+        continue
+        ;;
       ('()')
         (( names_seen == 1 )) || [[ ${zsyh_user_options[multifuncdef]:-off} == on ]] || return 1
         return 0
         ;;
-      ($'\n'|';'|'|'|'||'|'&'|'&&'|'|&'|'&!'|'&|')
+      (';'|'|'|'||'|'&'|'&&'|'|&'|'&!'|'&|')
         return 1
         ;;
       (*)
@@ -350,7 +353,10 @@ _zsh_highlight_main__precommand_target_mode() {
     (builtin)
       REPLY=builtin
       ;;
-    (command|nice|doas|pkexec|sudo|stdbuf|eatmydata|catchsegv|nohup|setsid|ionice|strace|proxychains|torsocks|torify)
+    (-|exec|noglob)
+      REPLY=normal
+      ;;
+    (command|nice|doas|pkexec|sudo|stdbuf|eatmydata|catchsegv|nohup|setsid|env|ionice|strace|proxychains|torsocks|torify|ssh-agent|tabbed|chronic|ifne|grc|cpulimit|ktrace|caffeinate)
       REPLY=external
       ;;
     (*)
@@ -400,6 +406,37 @@ _zsh_highlight_main__is_precommand_for_mode() {
         return 0
       fi
       return 1
+      ;;
+  esac
+}
+
+_zsh_highlight_main__lookup_subject_style() {
+  case "$1" in
+    (reserved) REPLY=reserved-word ;;
+    ('suffix alias') REPLY=suffix-alias ;;
+    ('global alias') REPLY=global-alias ;;
+    (alias) REPLY=alias ;;
+    (builtin) REPLY=builtin ;;
+    (function) REPLY=function ;;
+    (command) REPLY=command ;;
+    (hashed) REPLY=hashed-command ;;
+    (none) REPLY=unknown-token ;;
+    (*) REPLY=arg0_$1 ;;
+  esac
+}
+
+_zsh_highlight_main__lookup_subject_type() {
+  local mode=$1 subject=$2
+
+  case $mode in
+    (builtin)
+      _zsh_highlight_main__builtin_target_type "$subject"
+      ;;
+    (external)
+      _zsh_highlight_main__external_target_type "$subject"
+      ;;
+    (*)
+      _zsh_highlight_main__type "$subject" 0
       ;;
   esac
 }
@@ -955,9 +992,9 @@ _zsh_highlight_main_highlighter_highlight_list()
       fi
       if [[ $this_word == *':sudo_opt:'* ]]; then
         if [[ $this_word == *':precommand_name_command:'* ]] && [[ $arg == -*[vV]* ]]; then
-          precommand_mode_marker=''
-        fi
-        if [[ -n $flags_with_argument ]] &&
+          this_word=':sudo_opt:'
+          next_word=':lookup_subject:'
+        elif [[ -n $flags_with_argument ]] &&
            { 
              # Trenary
              if [[ -n $flags_sans_argument ]]
@@ -1025,8 +1062,29 @@ _zsh_highlight_main_highlighter_highlight_list()
     fi
 
     if (( ! in_redirection )); then
+      if [[ $this_word == *':lookup_subject:'* ]] &&
+         [[ -z ${(M)ZSH_HIGHLIGHT_TOKENS_COMMANDSEPARATOR:#"$arg"} ]]
+      then
+        local lookup_mode=normal lookup_mode_marker=''
+        if [[ $this_word == *':precommand_target_builtin:'* ]]; then
+          lookup_mode=builtin
+          lookup_mode_marker=':precommand_target_builtin:'
+        elif [[ $this_word == *':precommand_target_external:'* ]]; then
+          lookup_mode=external
+          lookup_mode_marker=':precommand_target_external:'
+        fi
+        _zsh_highlight_main__lookup_subject_type "$lookup_mode" "$arg"
+        _zsh_highlight_main__lookup_subject_style "$REPLY"
+        style=$REPLY
+        next_word=':lookup_subject:'"$lookup_mode_marker"
+        _zsh_highlight_main_add_region_highlight $start_pos $end_pos $style
+        continue
+      fi
       if [[ $this_word == *':function_header:'* ]]; then
-        if [[ $arg == '-T' ]]; then
+        if [[ $arg == $'\n' ]]; then
+          style=commandseparator
+          next_word=':function_header:'
+        elif [[ $arg == '-T' ]]; then
           style=single-hyphen-option
           next_word=':function_header:'
         elif _zsh_highlight_main__is_function_name "$arg"; then
@@ -1045,7 +1103,10 @@ _zsh_highlight_main_highlighter_highlight_list()
         _zsh_highlight_main_add_region_highlight $start_pos $end_pos $style
         continue
       elif [[ $this_word == *':function_name_list:'* ]]; then
-        if [[ $arg == '()' ]]; then
+        if [[ $arg == $'\n' ]]; then
+          style=commandseparator
+          next_word=':function_name_list:'
+        elif [[ $arg == '()' ]]; then
           style=reserved-word
           next_word=':start::start_of_pipeline:'
         elif _zsh_highlight_main__is_function_name "$arg"; then
@@ -1080,6 +1141,12 @@ _zsh_highlight_main_highlighter_highlight_list()
         esac
       elif [[ $this_word == *':regular:'* ]]; then
         style=commandseparator
+      elif [[ $this_word == *':lookup_subject:'* ]]; then
+        style=commandseparator
+      elif [[ $this_word == *':function_header:'* ]]; then
+        style=commandseparator
+      elif [[ $this_word == *':function_name_list:'* ]]; then
+        style=commandseparator
       elif [[ $this_word == *':start:'* ]] && [[ $arg == $'\n' ]]; then
         style=commandseparator
       elif [[ $this_word == *':start:'* ]] && [[ $arg == ';' ]] && (( $#in_alias )); then
@@ -1100,6 +1167,10 @@ _zsh_highlight_main_highlighter_highlight_list()
       if [[ $arg == $'\n' ]] && $in_array_assignment; then
         # literal newline inside an array assignment
         next_word=':regular:'
+      elif [[ $arg == $'\n' ]] && [[ $this_word == *':function_header:'* ]]; then
+        next_word=':function_header:'
+      elif [[ $arg == $'\n' ]] && [[ $this_word == *':function_name_list:'* ]]; then
+        next_word=':function_name_list:'
       elif [[ $arg == ';' ]] && $in_array_assignment; then
         # literal semicolon inside an array assignment
         next_word=':regular:'
@@ -1662,10 +1733,42 @@ _zsh_highlight_main_highlighter_highlight_parameter_paren_block()
 {
   integer arg1=$1 i=$1 depth=1 closed=1
   local body_style=$2 delim_style=$3 quote_context=${4:-unquoted}
+  local block_delim
   local -a saved_reply
   reply=()
 
   while (( ++i <= $#arg )); do
+    if [[ $body_style == parameter-expansion-flag ]] &&
+       [[ $arg[$i] == [[:alpha:]] ]] &&
+       (( i < $#arg )) &&
+       [[ $arg[$(( i + 1 ))] != [[:alnum:]] ]] &&
+       [[ $arg[$(( i + 1 ))] != ')' ]] &&
+       [[ $arg[$(( i + 1 ))] != '(' ]]
+    then
+      block_delim=$arg[$(( i + 1 ))]
+      (( i += 2 ))
+      while (( i <= $#arg )); do
+        case "$arg[$i]" in
+          "\\")
+            (( i += 2 ))
+            continue
+            ;;
+          '$' | "'" | '"' | '`')
+            saved_reply=($reply)
+            if _zsh_highlight_main_highlighter_highlight_nested_construct $i 0 $quote_context; then
+              (( i = REPLY ))
+              reply=($saved_reply $reply)
+              (( i++ ))
+              continue
+            fi
+            ;;
+        esac
+        [[ $arg[$i] == $block_delim ]] && break
+        (( i++ ))
+      done
+      (( i > $#arg )) && break
+      continue
+    fi
     case "$arg[$i]" in
       '(')
         (( depth++ ))
@@ -1890,10 +1993,11 @@ _zsh_highlight_main_highlighter_highlight_parameter_expansion()
         ;;
       ':')
         if [[ $parser_state == subject || ( $parser_state == rhs && substring_operator ) ]]; then
-          integer substring_continuation=$substring_operator
+          integer substring_continuation=$substring_operator offset_had_space=0
           integer offset_index=$(( i + 1 ))
           while [[ $arg[$offset_index] == ' ' ]]; do
             (( offset_index++ ))
+            offset_had_space=1
           done
           operator_len=0
           if [[ $parser_state == subject ]] &&
@@ -1901,13 +2005,26 @@ _zsh_highlight_main_highlighter_highlight_parameter_expansion()
           then
             operator_len=3
           elif [[ $parser_state == subject ]] &&
+               [[ $arg[$(( i + 1 ))] == '/' ]]
+          then
+            operator_len=2
+          elif [[ $parser_state == subject ]] &&
                [[ $arg[$(( i + 1 ))] == [\-+=?\#\*\|\^] ]]
           then
             operator_len=2
             if [[ $arg[$(( i + 1 ))] == '^' && $arg[$(( i + 2 ))] == '^' ]]; then
               operator_len=3
             fi
-          elif [[ $arg[$offset_index] == [0-9\$\(\-] ]]; then
+          elif [[ $parser_state == subject ]] &&
+               (
+                 [[ $arg[$offset_index] == [0-9\$\(\+\-] ]] ||
+                 ( (( offset_had_space )) && [[ $arg[$offset_index] == [A-Za-z_0-9\$\(\+\-] ]] )
+               )
+          then
+            operator_len=1
+          elif (( substring_continuation )) &&
+               [[ $arg[$offset_index] == [A-Za-z_0-9\$\(\+\-] ]]
+          then
             operator_len=1
           fi
 
@@ -2037,6 +2154,13 @@ _zsh_highlight_main_highlighter_highlight_glob_qualifiers()
   while (( tail_index > 1 )) && (( block_ends[tail_index-1] + 1 == block_starts[tail_index] )); do
     (( tail_index-- ))
   done
+
+  if (( tail_index > 0 )) &&
+     (( block_starts[tail_index] > 1 )) &&
+     [[ $arg[$(( block_starts[tail_index] - 1 ))] == [\$\<\>\=] ]]
+  then
+    return 1
+  fi
 
   for (( i = tail_index; i <= $#block_starts; i++ )); do
     body=$arg[$(( block_starts[i] + 1 )),$(( block_ends[i] - 1 ))]
@@ -2203,11 +2327,19 @@ _zsh_highlight_main_highlighter_highlight_argument()
     esac
   done
 
+  local qualifier_candidate=true
+  case $arg in
+    ('$('*|'<('*|'>('*|'=('*)
+      qualifier_candidate=false
+      ;;
+  esac
+
   if $highlight_glob &&
+     $qualifier_candidate &&
      (
        $globbing_seen ||
        [[ $arg == *'(#q'*')' ]] ||
-       [[ $arg =~ '\(([NDomn]|[./@*=])([A-Zomnh0-9,+-]|[./@*=])*\)$' ]]
+       [[ $arg =~ '\([^()|~]*\)$' ]]
      )
   then
     if _zsh_highlight_main_highlighter_highlight_glob_qualifiers; then
