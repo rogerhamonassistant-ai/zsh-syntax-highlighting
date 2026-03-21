@@ -235,7 +235,9 @@ _zsh_highlight_highlighter_brackets_paint()
             (( pos++ ))
           fi
         else
-          (( pos++ ))
+          if [[ ${BUFFER[$(( pos + 1 ))]:-} != [\(\)\[\]\{\}] ]]; then
+            (( pos++ ))
+          fi
         fi
         continue
         ;;
