@@ -87,7 +87,7 @@ _zsh_highlight_brackets_skip_quoted_region()
 # Brackets highlighting function.
 _zsh_highlight_highlighter_brackets_paint()
 {
-  local char style
+  local char style literal_key
   local -i bracket_color_size=${#ZSH_HIGHLIGHT_STYLES[(I)bracket-level-*]} buflen=${#BUFFER} level=0 matchingpos pos in_double_quote=0 shell_code_paren_depth=0 backtick_active=0 backtick_double_quote_active=0 pending_command_substitution=0
   local -a shell_code_double_quote_depths
   local -A levelpos lastoflevel matching literal_level literal_levelpos literal_lastoflevel literal_matching
@@ -120,10 +120,10 @@ _zsh_highlight_highlighter_brackets_paint()
           fi
           ;;
         ('"')
-          if (( shell_code_paren_depth == 0 )); then
-            in_double_quote=0
-          elif (( backtick_active )); then
+          if (( backtick_active )); then
             backtick_double_quote_active=$(( ! backtick_double_quote_active ))
+          elif (( shell_code_paren_depth == 0 )); then
+            in_double_quote=0
           elif (( ! backtick_active )); then
             if (( shell_code_double_quote_active )); then
               shell_code_double_quote_depths=("${shell_code_double_quote_depths[1,-2]}")
@@ -151,7 +151,13 @@ _zsh_highlight_highlighter_brackets_paint()
     fi
     case $char in
       "'")
-        if (( backtick_active || ! in_double_quote )); then
+        if (( backtick_active )); then
+          if (( ! backtick_double_quote_active )); then
+            _zsh_highlight_brackets_skip_quoted_region single $(( pos + 1 ))
+            pos=$REPLY
+            continue
+          fi
+        elif (( ! in_double_quote )); then
           _zsh_highlight_brackets_skip_quoted_region single $(( pos + 1 ))
           pos=$REPLY
           continue
@@ -166,10 +172,18 @@ _zsh_highlight_highlighter_brackets_paint()
         continue
         ;;
       '$')
-        if (( backtick_active || ! in_double_quote )) && [[ $BUFFER[$(( pos + 1 ))] == "'" ]]; then
-          _zsh_highlight_brackets_skip_quoted_region dollar-single $(( pos + 2 ))
-          pos=$REPLY
-          continue
+        if [[ $BUFFER[$(( pos + 1 ))] == "'" ]]; then
+          if (( backtick_active )); then
+            if (( ! backtick_double_quote_active )); then
+              _zsh_highlight_brackets_skip_quoted_region dollar-single $(( pos + 2 ))
+              pos=$REPLY
+              continue
+            fi
+          elif (( ! in_double_quote )); then
+            _zsh_highlight_brackets_skip_quoted_region dollar-single $(( pos + 2 ))
+            pos=$REPLY
+            continue
+          fi
         fi
         ;;
       "\\")
@@ -196,7 +210,6 @@ _zsh_highlight_highlighter_brackets_paint()
              (( backtick_active )) && (( backtick_double_quote_active )) && (( ! pending_command_substitution ))
            )
         then
-          local literal_key
           if (( backtick_active )) && (( backtick_double_quote_active )); then
             literal_key="backtick:$shell_code_paren_depth"
           else
@@ -226,7 +239,6 @@ _zsh_highlight_highlighter_brackets_paint()
              (( backtick_active )) && (( backtick_double_quote_active ))
            )
         then
-          local literal_key
           if (( backtick_active )) && (( backtick_double_quote_active )); then
             literal_key="backtick:$shell_code_paren_depth"
           else
