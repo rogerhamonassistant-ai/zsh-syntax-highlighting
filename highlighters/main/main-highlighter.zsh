@@ -2219,6 +2219,10 @@ _zsh_highlight_main_highlighter_highlight_parameter_expansion()
         ;;
       '#' | '%' | '/' | '+' | '=' | '-' | '?')
         if [[ $parser_state == subject ]]; then
+          if (( i == subject_start )) && [[ $arg[$i] == [\?\-] ]]; then
+            (( i++ ))
+            continue
+          fi
           if [[ $arg[$i] == '#' && i == subject_start ]]; then
             highlights+=($(( start_pos + i - 1 )) $(( start_pos + i )) parameter-expansion-operator)
             (( i++ ))
@@ -2266,7 +2270,7 @@ _zsh_highlight_main_highlighter_highlight_parameter_expansion()
   (( closed )) && reply+=($(( start_pos + end_idx - 1 )) $(( start_pos + end_idx )) parameter-expansion-delimiter)
 
   REPLY=$end_idx
-  return $(( ! closed ))
+  return 0
 }
 
 _zsh_highlight_main_highlighter_highlight_glob_qualifiers()
@@ -2318,9 +2322,6 @@ _zsh_highlight_main_highlighter_highlight_glob_qualifiers()
   (( block_ends[-1] == $#arg )) || return 1
 
   tail_index=$#block_starts
-  while (( tail_index > 1 )) && (( block_ends[tail_index-1] + 1 == block_starts[tail_index] )); do
-    (( tail_index-- ))
-  done
 
   if (( tail_index > 0 )) &&
      (( block_starts[tail_index] > 1 )) &&
