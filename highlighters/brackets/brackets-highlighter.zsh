@@ -88,7 +88,7 @@ _zsh_highlight_brackets_skip_quoted_region()
 _zsh_highlight_highlighter_brackets_paint()
 {
   local char style literal_key
-  local -i bracket_color_size=${#ZSH_HIGHLIGHT_STYLES[(I)bracket-level-*]} buflen=${#BUFFER} level=0 matchingpos pos in_double_quote=0 shell_code_paren_depth=0 backtick_active=0 backtick_double_quote_active=0 pending_command_substitution=0
+  local -i bracket_color_size=${#ZSH_HIGHLIGHT_STYLES[(I)bracket-level-*]} buflen=${#BUFFER} level=0 matchingpos pos in_double_quote=0 shell_code_paren_depth=0 backtick_active=0 backtick_double_quote_active=0 backtick_base_shell_depth=0 pending_command_substitution=0
   local -a shell_code_double_quote_depths
   local -A levelpos lastoflevel matching literal_level literal_levelpos literal_lastoflevel literal_matching
 
@@ -113,14 +113,22 @@ _zsh_highlight_highlighter_brackets_paint()
           continue
           ;;
         ("'")
-          if (( shell_code_paren_depth > 0 )) && (( ! shell_code_double_quote_active )) && (( ! backtick_active )); then
+          if (( shell_code_paren_depth > 0 )) && (( ! shell_code_double_quote_active )) &&
+             ( (( ! backtick_active )) || (( shell_code_paren_depth > backtick_base_shell_depth )) )
+          then
             _zsh_highlight_brackets_skip_quoted_region single $(( pos + 1 ))
             pos=$REPLY
             continue
           fi
           ;;
         ('"')
-          if (( backtick_active )); then
+          if (( backtick_active )) && (( shell_code_paren_depth > backtick_base_shell_depth )); then
+            if (( shell_code_double_quote_active )); then
+              shell_code_double_quote_depths=("${shell_code_double_quote_depths[1,-2]}")
+            else
+              shell_code_double_quote_depths+=($shell_code_paren_depth)
+            fi
+          elif (( backtick_active )); then
             backtick_double_quote_active=$(( ! backtick_double_quote_active ))
           elif (( shell_code_paren_depth == 0 )); then
             in_double_quote=0
@@ -134,17 +142,30 @@ _zsh_highlight_highlighter_brackets_paint()
           continue
           ;;
         ('$')
-          if (( shell_code_paren_depth > 0 )) && (( ! shell_code_double_quote_active )) && (( ! backtick_active )) && [[ $BUFFER[$(( pos + 1 ))] == "'" ]]; then
+          if (( shell_code_paren_depth > 0 )) && (( ! shell_code_double_quote_active )) &&
+             ( (( ! backtick_active )) || (( shell_code_paren_depth > backtick_base_shell_depth )) ) &&
+             [[ $BUFFER[$(( pos + 1 ))] == "'" ]]
+          then
             _zsh_highlight_brackets_skip_quoted_region dollar-single $(( pos + 2 ))
             pos=$REPLY
             continue
-          elif [[ $BUFFER[$(( pos + 1 ))] == '(' ]]; then
+          elif [[ $BUFFER[$(( pos + 1 ))] == '(' ]] &&
+               (
+                 (( ! backtick_active )) ||
+                 ( (( shell_code_paren_depth > backtick_base_shell_depth )) || (( backtick_double_quote_active )) )
+               )
+          then
             pending_command_substitution=1
           fi
           ;;
         ('`')
           backtick_active=$(( ! backtick_active ))
-          (( backtick_active )) || backtick_double_quote_active=0
+          if (( backtick_active )); then
+            backtick_base_shell_depth=$shell_code_paren_depth
+          else
+            backtick_double_quote_active=0
+            backtick_base_shell_depth=0
+          fi
           continue
           ;;
       esac
@@ -152,7 +173,13 @@ _zsh_highlight_highlighter_brackets_paint()
     case $char in
       "'")
         if (( backtick_active )); then
-          if (( ! backtick_double_quote_active )); then
+          if (( shell_code_paren_depth > backtick_base_shell_depth )); then
+            if (( ! shell_code_double_quote_active )); then
+              _zsh_highlight_brackets_skip_quoted_region single $(( pos + 1 ))
+              pos=$REPLY
+              continue
+            fi
+          elif (( ! backtick_double_quote_active )); then
             _zsh_highlight_brackets_skip_quoted_region single $(( pos + 1 ))
             pos=$REPLY
             continue
@@ -165,7 +192,15 @@ _zsh_highlight_highlighter_brackets_paint()
         ;;
       '"')
         if (( backtick_active )); then
-          backtick_double_quote_active=$(( ! backtick_double_quote_active ))
+          if (( shell_code_paren_depth > backtick_base_shell_depth )); then
+            if (( shell_code_double_quote_active )); then
+              shell_code_double_quote_depths=("${shell_code_double_quote_depths[1,-2]}")
+            else
+              shell_code_double_quote_depths+=($shell_code_paren_depth)
+            fi
+          else
+            backtick_double_quote_active=$(( ! backtick_double_quote_active ))
+          fi
         else
           in_double_quote=1
         fi
@@ -174,7 +209,13 @@ _zsh_highlight_highlighter_brackets_paint()
       '$')
         if [[ $BUFFER[$(( pos + 1 ))] == "'" ]]; then
           if (( backtick_active )); then
-            if (( ! backtick_double_quote_active )); then
+            if (( shell_code_paren_depth > backtick_base_shell_depth )); then
+              if (( ! shell_code_double_quote_active )); then
+                _zsh_highlight_brackets_skip_quoted_region dollar-single $(( pos + 2 ))
+                pos=$REPLY
+                continue
+              fi
+            elif (( ! backtick_double_quote_active )); then
               _zsh_highlight_brackets_skip_quoted_region dollar-single $(( pos + 2 ))
               pos=$REPLY
               continue
@@ -184,6 +225,8 @@ _zsh_highlight_highlighter_brackets_paint()
             pos=$REPLY
             continue
           fi
+        elif [[ $BUFFER[$(( pos + 1 ))] == '(' ]] && (( backtick_active )) && (( backtick_double_quote_active || shell_code_paren_depth > 0 )); then
+          pending_command_substitution=1
         fi
         ;;
       "\\")
@@ -207,10 +250,15 @@ _zsh_highlight_highlighter_brackets_paint()
         if (
              (( in_double_quote )) && (( shell_code_double_quote_active )) && (( ! backtick_active )) && (( ! pending_command_substitution ))
            ) || (
-             (( backtick_active )) && (( backtick_double_quote_active )) && (( ! pending_command_substitution ))
+             (( backtick_active )) &&
+             (
+               ( (( shell_code_paren_depth > backtick_base_shell_depth )) && (( shell_code_double_quote_active )) ) ||
+               ( (( shell_code_paren_depth == backtick_base_shell_depth )) && (( backtick_double_quote_active )) )
+             ) &&
+             (( ! pending_command_substitution ))
            )
         then
-          if (( backtick_active )) && (( backtick_double_quote_active )); then
+          if (( backtick_active )); then
             literal_key="backtick:$shell_code_paren_depth"
           else
             literal_key="$shell_code_paren_depth"
@@ -222,11 +270,13 @@ _zsh_highlight_highlighter_brackets_paint()
         else
           levelpos[$pos]=$((++level))
           lastoflevel[$level]=$pos
-          if (( in_double_quote )); then
+          if (( in_double_quote || backtick_active )); then
             if (( pending_command_substitution )) && [[ $char == '(' ]]; then
               (( shell_code_paren_depth++ ))
               pending_command_substitution=0
-            elif (( shell_code_paren_depth > 0 )) && [[ $char == '(' ]] && (( ! shell_code_double_quote_active )) && (( ! backtick_active )); then
+            elif (( shell_code_paren_depth > 0 )) && [[ $char == '(' ]] && (( ! shell_code_double_quote_active )) &&
+                 ( (( ! backtick_active )) || (( shell_code_paren_depth > backtick_base_shell_depth )) )
+            then
               (( shell_code_paren_depth++ ))
             fi
           fi
@@ -236,10 +286,14 @@ _zsh_highlight_highlighter_brackets_paint()
         if (
              (( in_double_quote )) && (( shell_code_double_quote_active )) && (( ! backtick_active ))
            ) || (
-             (( backtick_active )) && (( backtick_double_quote_active ))
+             (( backtick_active )) &&
+             (
+               ( (( shell_code_paren_depth > backtick_base_shell_depth )) && (( shell_code_double_quote_active )) ) ||
+               ( (( shell_code_paren_depth == backtick_base_shell_depth )) && (( backtick_double_quote_active )) )
+             )
            )
         then
-          if (( backtick_active )) && (( backtick_double_quote_active )); then
+          if (( backtick_active )); then
             literal_key="backtick:$shell_code_paren_depth"
           else
             literal_key="$shell_code_paren_depth"
@@ -266,7 +320,10 @@ _zsh_highlight_highlighter_brackets_paint()
         else
           levelpos[$pos]=-1
         fi
-        if (( in_double_quote )) && (( shell_code_paren_depth > 0 )) && [[ $char == ')' ]] && (( ! shell_code_double_quote_active )) && (( ! backtick_active )); then
+        if (( in_double_quote || backtick_active )) && (( shell_code_paren_depth > 0 )) && [[ $char == ')' ]] &&
+           (( ! shell_code_double_quote_active )) &&
+           ( (( ! backtick_active )) || (( shell_code_paren_depth > backtick_base_shell_depth )) )
+        then
           (( shell_code_paren_depth-- ))
         fi
         ;;
