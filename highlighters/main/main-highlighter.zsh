@@ -442,6 +442,9 @@ _zsh_highlight_main__is_precommand_for_mode() {
 
   case $mode in
     (external)
+      if (( ${+precommand_options[$arg]} )); then
+        _zsh_highlight_main__external_target_type "$arg" && return 0
+      fi
       return 1
       ;;
     (builtin)
@@ -2098,7 +2101,7 @@ _zsh_highlight_main_highlighter_highlight_parameter_subscript()
 
 _zsh_highlight_main_highlighter_highlight_parameter_expansion()
 {
-  integer arg1=$1 complex_only=${2:-0} i subject_start operator_len closed=1 end_idx=0
+  integer arg1=$1 complex_only=${2:-0} i subject_start operator_len closed=1 end_idx=0 invalid_special_parameter=0
   local quote_context=${3:-unquoted}
   local parser_state=subject
   integer substring_operator=0
@@ -2131,6 +2134,14 @@ _zsh_highlight_main_highlighter_highlight_parameter_expansion()
 
   subject_start=$i
   while (( i <= $#arg )); do
+    if [[ $parser_state == invalid ]]; then
+      if [[ $arg[$i] == '}' ]]; then
+        end_idx=$i
+        break
+      fi
+      (( i++ ))
+      continue
+    fi
     case "$arg[$i]" in
       '}')
         end_idx=$i
@@ -2156,7 +2167,11 @@ _zsh_highlight_main_highlighter_highlight_parameter_expansion()
         fi
         ;;
       ':')
-        if [[ $parser_state == subject || ( $parser_state == rhs && substring_operator ) ]]; then
+        if [[ $parser_state == rhs ]] && (( ! substring_operator )); then
+          (( i++ ))
+          continue
+        fi
+        if [[ $parser_state == subject ]] || { [[ $parser_state == rhs ]] && (( substring_operator )); }; then
           integer substring_continuation=$substring_operator offset_had_space=0
           integer offset_index=$(( i + 1 ))
           while [[ $arg[$offset_index] == ' ' ]]; do
@@ -2220,11 +2235,79 @@ _zsh_highlight_main_highlighter_highlight_parameter_expansion()
       '#' | '%' | '/' | '+' | '=' | '-' | '?')
         if [[ $parser_state == subject ]]; then
           if (( i == subject_start )) && [[ $arg[$i] == [\?\-] ]]; then
+            local next_subject_char=${arg[$(( i + 1 ))]:-}
+            if [[ -z $next_subject_char ]] || [[ $next_subject_char == '}' ]]; then
+              (( i++ ))
+              subject_start=$i
+              continue
+            elif [[ $next_subject_char == ':' ]]; then
+              operator_len=0
+              if [[ ${arg[$(( i + 2 ))]:-} == ':' && ${arg[$(( i + 3 ))]:-} == '=' ]]; then
+                operator_len=3
+              elif [[ ${arg[$(( i + 2 ))]:-} == [\-+=?\#\*\|\^/] ]]; then
+                operator_len=2
+              fi
+              if (( operator_len )); then
+                highlights+=($(( start_pos + i )) $(( start_pos + i + operator_len )) parameter-expansion-operator)
+                parser_state=rhs
+                substring_operator=0
+                (( i += operator_len + 1 ))
+                continue
+              fi
+            elif [[ $next_subject_char == [#%/+=?-] ]]; then
+              operator_len=1
+              if [[ $next_subject_char == [#%/] && ${arg[$(( i + 2 ))]:-} == $next_subject_char ]]; then
+                operator_len=2
+              fi
+              highlights+=($(( start_pos + i )) $(( start_pos + i + operator_len - 1 )) parameter-expansion-operator)
+              parser_state=rhs
+              substring_operator=0
+              (( i += operator_len + 1 ))
+              continue
+            fi
+            invalid_special_parameter=1
+            parser_state=invalid
             (( i++ ))
             continue
           fi
           if [[ $arg[$i] == '#' && i == subject_start ]]; then
             highlights+=($(( start_pos + i - 1 )) $(( start_pos + i )) parameter-expansion-operator)
+            if [[ ${arg[$(( i + 1 ))]:-} == [\?\-] ]]; then
+              local next_subject_char=${arg[$(( i + 2 ))]:-}
+              if [[ -z $next_subject_char ]] || [[ $next_subject_char == '}' ]]; then
+                (( i += 2 ))
+                subject_start=$i
+                continue
+              elif [[ $next_subject_char == ':' ]]; then
+                operator_len=0
+                if [[ ${arg[$(( i + 3 ))]:-} == ':' && ${arg[$(( i + 4 ))]:-} == '=' ]]; then
+                  operator_len=3
+                elif [[ ${arg[$(( i + 3 ))]:-} == [\-+=?\#\*\|\^/] ]]; then
+                  operator_len=2
+                fi
+                if (( operator_len )); then
+                  highlights+=($(( start_pos + i + 1 )) $(( start_pos + i + operator_len + 1 )) parameter-expansion-operator)
+                  parser_state=rhs
+                  substring_operator=0
+                  (( i += operator_len + 2 ))
+                  continue
+                fi
+              elif [[ $next_subject_char == [#%/+=?-] ]]; then
+                operator_len=1
+                if [[ $next_subject_char == [#%/] && ${arg[$(( i + 3 ))]:-} == $next_subject_char ]]; then
+                  operator_len=2
+                fi
+                highlights+=($(( start_pos + i + 1 )) $(( start_pos + i + operator_len )) parameter-expansion-operator)
+                parser_state=rhs
+                substring_operator=0
+                (( i += operator_len + 2 ))
+                continue
+              fi
+              invalid_special_parameter=1
+              parser_state=invalid
+              (( i += 2 ))
+              continue
+            fi
             (( i++ ))
             subject_start=$i
             continue
@@ -2260,6 +2343,12 @@ _zsh_highlight_main_highlighter_highlight_parameter_expansion()
   if (( end_idx == 0 )); then
     end_idx=$#arg
     closed=0
+  fi
+
+  if (( invalid_special_parameter )); then
+    reply=($(( start_pos + arg1 - 1 )) $(( start_pos + end_idx )) unknown-token)
+    REPLY=$end_idx
+    return 0
   fi
 
   reply=(
@@ -2322,6 +2411,12 @@ _zsh_highlight_main_highlighter_highlight_glob_qualifiers()
   (( block_ends[-1] == $#arg )) || return 1
 
   tail_index=$#block_starts
+  while (( tail_index > 1 )) &&
+        (( block_ends[tail_index - 1] + 1 == block_starts[tail_index] )) &&
+        [[ $arg[$(( block_starts[tail_index - 1] + 1 )),$(( block_starts[tail_index - 1] + 2 ))] == '#q' ]]
+  do
+    (( tail_index-- ))
+  done
 
   if (( tail_index > 0 )) &&
      (( block_starts[tail_index] > 1 )) &&
