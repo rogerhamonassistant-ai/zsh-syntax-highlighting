@@ -442,7 +442,9 @@ _zsh_highlight_main__is_precommand_for_mode() {
 
   case $mode in
     (external)
-      if (( ${+precommand_options[$arg]} )); then
+      if (( ${+precommand_options[$arg]} )) &&
+         [[ $arg == (nice|doas|pkexec|sudo|stdbuf|eatmydata|catchsegv|nohup|setsid|env|ionice|strace|proxychains|torsocks|torify|ssh-agent|tabbed|chronic|ifne|grc|cpulimit|ktrace|caffeinate) ]]
+      then
         _zsh_highlight_main__external_target_type "$arg" && return 0
       fi
       return 1
@@ -1402,7 +1404,25 @@ _zsh_highlight_main_highlighter_highlight_list()
           # To allow "exec 2>&1;" and "env | grep" where there's no command word
           next_word+=':regular:'
         fi
+        [[ $arg == env ]] && next_word+=':env_assign_ok:'
       else
+        if (( ! in_param )) &&
+           [[ $this_word == *':env_assign_ok:'* ]] &&
+           _zsh_highlight_main_highlighter_check_assign
+        then
+          _zsh_highlight_main_add_region_highlight $start_pos $end_pos assign
+          local i=$(( arg[(i)=] + 1 ))
+          saw_assignment=true
+          next_word=':start::precommand_target_external::env_assign_ok::regular:'
+          if (( i <= $#arg )); then
+            () {
+              local highlight_glob=false
+              [[ $zsyh_user_options[globassign] == on ]] && highlight_glob=true
+              _zsh_highlight_main_highlighter_highlight_argument $i
+            }
+          fi
+          continue
+        fi
         if [[ $command_lookup_mode == builtin ]]; then
           _zsh_highlight_main__builtin_target_type "$arg"
           res=$REPLY
@@ -1510,9 +1530,13 @@ _zsh_highlight_main_highlighter_highlight_list()
           (function)    style=function;;
           (command)     style=command;;
           (hashed)      style=hashed-command;;
-          (none)        if [[ $command_lookup_mode == normal ]] &&
-                           (( ! in_param )) &&
-                           _zsh_highlight_main_highlighter_check_assign; then
+          (none)        if (( ! in_param )) &&
+                           (
+                             [[ $command_lookup_mode == normal ]] ||
+                             [[ $this_word == *':env_assign_ok:'* ]]
+                           ) &&
+                           _zsh_highlight_main_highlighter_check_assign
+                        then
                           _zsh_highlight_main_add_region_highlight $start_pos $end_pos assign
                           local i=$(( arg[(i)=] + 1 ))
                           saw_assignment=true
@@ -1526,6 +1550,7 @@ _zsh_highlight_main_highlighter_highlight_list()
                             # Discard  :start_of_pipeline:, if present, as '!' is not valid
                             # after assignments.
                             next_word+=':start:'
+                            [[ $this_word == *':env_assign_ok:'* ]] && next_word+=':precommand_target_external::env_assign_ok::regular:'
                             if (( i <= $#arg )); then
                               () {
                                 local highlight_glob=false
@@ -1900,7 +1925,7 @@ _zsh_highlight_main_highlighter_highlight_parameter_paren_block()
 
   while (( ++i <= $#arg )); do
     if [[ $body_style == parameter-expansion-flag ]] &&
-       [[ $arg[$i] == [[:alpha:]] ]] &&
+       [[ $arg[$i] == [jsZ_] ]] &&
        (( i < $#arg )) &&
        [[ $arg[$(( i + 1 ))] != [[:alnum:]] ]] &&
        [[ $arg[$(( i + 1 ))] != ')' ]] &&
@@ -2234,35 +2259,14 @@ _zsh_highlight_main_highlighter_highlight_parameter_expansion()
         ;;
       '#' | '%' | '/' | '+' | '=' | '-' | '?')
         if [[ $parser_state == subject ]]; then
-          if (( i == subject_start )) && [[ $arg[$i] == [\?\-] ]]; then
+          if (( i == subject_start )) && { [[ $arg[$i] == '?' ]] || [[ $arg[$i] == '-' ]]; }; then
             local next_subject_char=${arg[$(( i + 1 ))]:-}
-            if [[ -z $next_subject_char ]] || [[ $next_subject_char == '}' ]]; then
+            if [[ -z $next_subject_char ]] || [[ $next_subject_char == '}' ]] ||
+               [[ $next_subject_char == ':' ]] || [[ $next_subject_char == '[' ]] ||
+               [[ $next_subject_char == [#%/+=?-] ]]
+            then
               (( i++ ))
               subject_start=$i
-              continue
-            elif [[ $next_subject_char == ':' ]]; then
-              operator_len=0
-              if [[ ${arg[$(( i + 2 ))]:-} == ':' && ${arg[$(( i + 3 ))]:-} == '=' ]]; then
-                operator_len=3
-              elif [[ ${arg[$(( i + 2 ))]:-} == [\-+=?\#\*\|\^/] ]]; then
-                operator_len=2
-              fi
-              if (( operator_len )); then
-                highlights+=($(( start_pos + i )) $(( start_pos + i + operator_len )) parameter-expansion-operator)
-                parser_state=rhs
-                substring_operator=0
-                (( i += operator_len + 1 ))
-                continue
-              fi
-            elif [[ $next_subject_char == [#%/+=?-] ]]; then
-              operator_len=1
-              if [[ $next_subject_char == [#%/] && ${arg[$(( i + 2 ))]:-} == $next_subject_char ]]; then
-                operator_len=2
-              fi
-              highlights+=($(( start_pos + i )) $(( start_pos + i + operator_len - 1 )) parameter-expansion-operator)
-              parser_state=rhs
-              substring_operator=0
-              (( i += operator_len + 1 ))
               continue
             fi
             invalid_special_parameter=1
@@ -2270,44 +2274,8 @@ _zsh_highlight_main_highlighter_highlight_parameter_expansion()
             (( i++ ))
             continue
           fi
-          if [[ $arg[$i] == '#' && i == subject_start ]]; then
+          if [[ $arg[$i] == '#' ]] && (( i == subject_start )); then
             highlights+=($(( start_pos + i - 1 )) $(( start_pos + i )) parameter-expansion-operator)
-            if [[ ${arg[$(( i + 1 ))]:-} == [\?\-] ]]; then
-              local next_subject_char=${arg[$(( i + 2 ))]:-}
-              if [[ -z $next_subject_char ]] || [[ $next_subject_char == '}' ]]; then
-                (( i += 2 ))
-                subject_start=$i
-                continue
-              elif [[ $next_subject_char == ':' ]]; then
-                operator_len=0
-                if [[ ${arg[$(( i + 3 ))]:-} == ':' && ${arg[$(( i + 4 ))]:-} == '=' ]]; then
-                  operator_len=3
-                elif [[ ${arg[$(( i + 3 ))]:-} == [\-+=?\#\*\|\^/] ]]; then
-                  operator_len=2
-                fi
-                if (( operator_len )); then
-                  highlights+=($(( start_pos + i + 1 )) $(( start_pos + i + operator_len + 1 )) parameter-expansion-operator)
-                  parser_state=rhs
-                  substring_operator=0
-                  (( i += operator_len + 2 ))
-                  continue
-                fi
-              elif [[ $next_subject_char == [#%/+=?-] ]]; then
-                operator_len=1
-                if [[ $next_subject_char == [#%/] && ${arg[$(( i + 3 ))]:-} == $next_subject_char ]]; then
-                  operator_len=2
-                fi
-                highlights+=($(( start_pos + i + 1 )) $(( start_pos + i + operator_len )) parameter-expansion-operator)
-                parser_state=rhs
-                substring_operator=0
-                (( i += operator_len + 2 ))
-                continue
-              fi
-              invalid_special_parameter=1
-              parser_state=invalid
-              (( i += 2 ))
-              continue
-            fi
             (( i++ ))
             subject_start=$i
             continue
@@ -2324,7 +2292,7 @@ _zsh_highlight_main_highlighter_highlight_parameter_expansion()
         fi
         ;;
       '^' | '~' | '=' | '+')
-        if [[ $parser_state == subject && i == subject_start ]]; then
+        if [[ $parser_state == subject ]] && (( i == subject_start )); then
           operator_len=1
           if [[ $arg[$i] == '^' && $arg[$(( i + 1 ))] == '^' ]]; then
             operator_len=2
