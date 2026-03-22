@@ -3,9 +3,7 @@ unsorted=1
 
 expected_region_highlight=(
   '1 1 builtin' # :
-  '3 9 default' # ${?foo}
   '3 9 unknown-token' # ${?foo}
-  '11 17 default' # ${-foo}
   '11 17 unknown-token' # ${-foo}
   '19 26 default' # ${#?:-x}
   '19 26 parameter-expansion' # ${#?:-x}

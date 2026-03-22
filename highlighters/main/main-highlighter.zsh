@@ -1460,6 +1460,8 @@ _zsh_highlight_main_highlighter_highlight_list()
           next_word=':start::start_of_pipeline:'
         else
           this_word=':start::start_of_pipeline:'
+          _zsh_highlight_main__type "$arg" 0
+          res=$REPLY
         fi
         if [[ $this_word == *':function_header_named:'* ]]; then
           _zsh_highlight_main_add_region_highlight $start_pos $end_pos $style
@@ -1484,6 +1486,8 @@ _zsh_highlight_main_highlighter_highlight_list()
             style=unknown-token
           else
             this_word=':start::start_of_pipeline:'
+            _zsh_highlight_main__type "$arg" 0
+            res=$REPLY
           fi
         fi
         if [[ $this_word == *':function_header_after_newline:'* ]]; then
@@ -1500,6 +1504,8 @@ _zsh_highlight_main_highlighter_highlight_list()
           next_word=':start::start_of_pipeline:'
         else
           this_word=':start::start_of_pipeline:'
+          _zsh_highlight_main__type "$arg" 0
+          res=$REPLY
         fi
         if [[ $this_word == *':function_body_pending:'* ]]; then
           _zsh_highlight_main_add_region_highlight $start_pos $end_pos $style
@@ -1612,6 +1618,17 @@ _zsh_highlight_main_highlighter_highlight_list()
           next_word=':start::start_of_pipeline:'
         fi
       elif [[ $arg == $'\n' ]] && [[ $this_word == *':function_body_pending:'* ]]; then
+        if [[ -z $next_function_token ]] ||
+           [[ $next_function_token == $histchars[3]* ]] ||
+           [[ $next_function_token == ';' ]] ||
+           [[ $next_function_token == $'\x7b' ]] ||
+           [[ $next_function_token == $'\n' ]]
+        then
+          next_word=':function_body_pending:'
+        else
+          next_word=':start::start_of_pipeline:'
+        fi
+      elif [[ $arg == ';' ]] && [[ $this_word == *':function_body_pending:'* ]]; then
         if [[ -z $next_function_token ]] ||
            [[ $next_function_token == $histchars[3]* ]] ||
            [[ $next_function_token == ';' ]] ||
@@ -2486,6 +2503,37 @@ _zsh_highlight_main_highlighter_highlight_parameter_expansion()
         break
         ;;
       '$' | "'" | '"' | '`')
+        if [[ $parser_state == subject ]] &&
+           (( i == subject_start )) &&
+           [[ $arg[$i] == '$' ]]
+        then
+          local next_subject_char=${arg[$(( i + 1 ))]:-}
+          if [[ -z $next_subject_char ]] || [[ $next_subject_char == '}' ]] ||
+             [[ $next_subject_char == ':' ]] || [[ $next_subject_char == '[' ]]
+          then
+            (( i++ ))
+            subject_start=$i
+            continue
+          elif [[ $next_subject_char == [#%/+=?-] ]]; then
+            operator_len=1
+            if [[ $next_subject_char == [#%/] && ${arg[$(( i + 2 ))]:-} == $next_subject_char ]]; then
+              operator_len=2
+            elif [[ $next_subject_char == ':' && ${arg[$(( i + 2 ))]:-} == ':' && ${arg[$(( i + 3 ))]:-} == '=' ]]; then
+              operator_len=3
+            elif [[ $next_subject_char == ':' && ${arg[$(( i + 2 ))]:-} == [\-+=?\#\*\|\^/] ]]; then
+              operator_len=2
+            fi
+            highlights+=($(( start_pos + i )) $(( start_pos + i + operator_len )) parameter-expansion-operator)
+            parser_state=rhs
+            substring_operator=0
+            (( i += operator_len ))
+            continue
+          fi
+          invalid_special_parameter=1
+          parser_state=invalid
+          (( i++ ))
+          continue
+        fi
         saved_reply=($highlights)
         if _zsh_highlight_main_highlighter_highlight_nested_construct $i 0 $quote_context; then
           (( i = REPLY ))
@@ -2570,9 +2618,9 @@ _zsh_highlight_main_highlighter_highlight_parameter_expansion()
         (( i++ ))
         continue
         ;;
-      '#' | '%' | '/' | '+' | '=' | '-' | '?')
+      '*' | '@' | '!' | '#' | '%' | '/' | '+' | '=' | '-' | '?')
         if [[ $parser_state == subject ]]; then
-          if (( i == subject_start )) && { [[ $arg[$i] == '?' ]] || [[ $arg[$i] == '-' ]]; }; then
+          if (( i == subject_start )) && [[ $arg[$i] == [*@!?-] ]]; then
             local next_subject_char=${arg[$(( i + 1 ))]:-}
             if [[ -z $next_subject_char ]] || [[ $next_subject_char == '}' ]] ||
                [[ $next_subject_char == ':' ]] || [[ $next_subject_char == '[' ]]
@@ -2827,7 +2875,15 @@ _zsh_highlight_main_highlighter_highlight_argument()
           continue
         elif _zsh_highlight_main_highlighter_highlight_parameter_expansion $i 1 unquoted; then
           (( i = REPLY ))
-          highlights+=($reply)
+          if (( $#reply >= 3 )) &&
+             [[ $reply[3] == unknown-token ]] &&
+             (( reply[1] == start_pos + $1 - 1 )) &&
+             (( reply[2] == end_pos ))
+          then
+            base_style=unknown-token
+          else
+            highlights+=($reply)
+          fi
           continue
         elif [[ $arg[i+1] == $'\x28' ]]; then
           if [[ $arg[i+2] == $'\x28' ]] && _zsh_highlight_main_highlighter_highlight_arithmetic $i; then
