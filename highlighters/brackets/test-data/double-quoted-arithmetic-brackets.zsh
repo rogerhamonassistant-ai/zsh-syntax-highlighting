@@ -7,8 +7,8 @@ BUFFER='echo "$(( 1 + ( ))"'
 
 expected_region_highlight=(
   '8 8 bracket-error' # (
-  '9 9 bracket-error' # (
+  '9 9 bracket-level-1' # (
   '15 15 bracket-level-1' # (
   '17 17 bracket-level-1' # )
-  '18 18 bracket-error' # )
+  '18 18 bracket-level-1' # )
 )

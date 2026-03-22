@@ -1,5 +1,5 @@
 BUFFER=": \$(( \\( ))"
 
 expected_region_highlight=(
-  '4 4 bracket-error' # (
+  '8 8 bracket-error' # (
 )
