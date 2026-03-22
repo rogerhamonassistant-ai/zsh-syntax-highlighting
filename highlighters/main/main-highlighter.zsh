@@ -391,22 +391,24 @@ _zsh_highlight_main__scan_delimited_argument() {
 }
 
 _zsh_highlight_main__skip_glob_qualifier_delimited_argument() {
-  integer i=$1
+  integer i=$1 qualifier_len=1
   local qualifier=$arg[$i] block_delim block_end_delim next_char
 
   (( i < $#arg )) || return 1
-  next_char=$arg[$(( i + 1 ))]
+  if [[ $qualifier == [oO] ]] && (( i < $#arg )) && [[ $arg[$(( i + 1 ))] == e ]]; then
+    qualifier+=$arg[$(( i + 1 ))]
+    qualifier_len=2
+  fi
+
+  (( i + qualifier_len <= $#arg )) || return 1
+  next_char=$arg[$(( i + qualifier_len ))]
   case "$qualifier" in
-    ([ePug])
-      [[ $next_char != [[:alnum:]] ]] || return 1
+    ([ePug]|[oO]e)
       [[ $next_char != ')' ]] || return 1
-      [[ $next_char != '(' ]] || return 1
       ;;
     (f)
-      [[ $next_char != [[:alnum:]] ]] || return 1
       [[ $next_char != [0-7?=+-] ]] || return 1
       [[ $next_char != ')' ]] || return 1
-      [[ $next_char != '(' ]] || return 1
       ;;
     (*)
       return 1
@@ -416,7 +418,7 @@ _zsh_highlight_main__skip_glob_qualifier_delimited_argument() {
   block_delim=$next_char
   _zsh_highlight_main__paired_delimiter_closer "$block_delim"
   block_end_delim=$REPLY
-  (( i += 2 ))
+  (( i += qualifier_len + 1 ))
 
   _zsh_highlight_main__scan_delimited_argument $i "$block_end_delim" 0 unquoted || return 1
   return 0
@@ -2725,8 +2727,8 @@ _zsh_highlight_main_highlighter_highlight_parameter_expansion()
 
 _zsh_highlight_main_highlighter_highlight_glob_qualifiers()
 {
-  integer i=1 j depth group_start group_end tail_start tail_index block_count=0
-  local -a block_starts block_ends
+  integer i=1 j depth group_start group_end tail_start tail_index block_count=0 block_has_delimited_body
+  local -a block_starts block_ends block_delimited_bodies
   local body
   reply=()
 
@@ -2735,6 +2737,7 @@ _zsh_highlight_main_highlighter_highlight_glob_qualifiers()
       '(')
         group_start=$i
         depth=1
+        block_has_delimited_body=0
         (( i++ ))
         while (( i <= $#arg )); do
           case "$arg[$i]" in
@@ -2754,6 +2757,15 @@ _zsh_highlight_main_highlighter_highlight_glob_qualifiers()
               ;;
             [ePugf])
               if _zsh_highlight_main__skip_glob_qualifier_delimited_argument $i; then
+                block_has_delimited_body=1
+                (( i = REPLY ))
+              fi
+              ;;
+            [oO])
+              if [[ ${arg[$(( i + 1 ))]:-} == e ]] &&
+                 _zsh_highlight_main__skip_glob_qualifier_delimited_argument $i
+              then
+                block_has_delimited_body=1
                 (( i = REPLY ))
               fi
               ;;
@@ -2768,6 +2780,7 @@ _zsh_highlight_main_highlighter_highlight_glob_qualifiers()
         (( depth == 0 )) || return 1
         block_starts+=($group_start)
         block_ends+=($i)
+        block_delimited_bodies+=($block_has_delimited_body)
         ;;
     esac
     (( i++ ))
@@ -2801,7 +2814,7 @@ _zsh_highlight_main_highlighter_highlight_glob_qualifiers()
         $(( start_pos + block_starts[i] )) $(( start_pos + block_starts[i] + 2 )) glob-qualifier-flag
         $(( start_pos + block_ends[i] - 1 )) $(( start_pos + block_ends[i] )) glob-qualifier-delimiter
       )
-    elif [[ $body != *'|'* && $body != *'('* && $body != *[[:blank:]]* ]]; then
+    elif (( block_delimited_bodies[i] )) || [[ $body != *'|'* && $body != *'('* && $body != *[[:blank:]]* ]]; then
       reply+=(
         $(( start_pos + block_starts[i] - 1 )) $(( start_pos + block_ends[i] )) glob-qualifier
         $(( start_pos + block_starts[i] - 1 )) $(( start_pos + block_starts[i] )) glob-qualifier-delimiter
