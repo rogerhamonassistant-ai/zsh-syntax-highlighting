@@ -6,5 +6,7 @@ BUFFER='echo "$(print '\''()'\'')"'
 
 expected_region_highlight=(
   "8 8 bracket-level-1" # (
+  "16 16 bracket-level-1" # (
+  "17 17 bracket-level-1" # )
   "19 19 bracket-level-1" # )
 )

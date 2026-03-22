@@ -160,9 +160,14 @@ _zsh_highlight_highlighter_brackets_paint()
   pos=0
   while (( ++pos <= buflen )); do
     char=$BUFFER[$pos]
-    integer shell_code_double_quote_active=0 arithmetic_active=0 current_shell_code_scope_id=0 current_backtick_scope_id=0
+    integer shell_code_double_quote_active=0 arithmetic_active=0 current_shell_code_scope_id=0 current_backtick_scope_id=0 nested_shell_code_active=0
     if (( $#shell_code_double_quote_depths )) && (( shell_code_double_quote_depths[-1] == shell_code_paren_depth )); then
       shell_code_double_quote_active=1
+    fi
+    if (( shell_code_paren_depth > 0 )) &&
+       ( (( ! backtick_active )) || (( shell_code_paren_depth > backtick_base_shell_depth )) )
+    then
+      nested_shell_code_active=1
     fi
     (( $#shell_code_scope_ids )) && current_shell_code_scope_id=$shell_code_scope_ids[-1]
     (( $#backtick_scope_ids )) && current_backtick_scope_id=$backtick_scope_ids[-1]
@@ -172,7 +177,7 @@ _zsh_highlight_highlighter_brackets_paint()
     then
       arithmetic_active=1
     fi
-    if (( in_double_quote )); then
+    if (( in_double_quote )) && (( ! nested_shell_code_active )); then
       case $char in
         ('\\')
           if (( arithmetic_active )); then
