@@ -248,12 +248,18 @@ _zsh_highlight_highlighter_brackets_paint()
         fi
         ;;
       [\<\>\=])
-        if (( backtick_active )) &&
+        if (( ! arithmetic_active )) &&
            [[ $BUFFER[$(( pos + 1 ))] == '(' ]]
         then
-          if (( shell_code_paren_depth > backtick_base_shell_depth )); then
+          if (( backtick_active )); then
+            if (( shell_code_paren_depth > backtick_base_shell_depth )); then
+              (( ! shell_code_double_quote_active )) && pending_command_substitution=1
+            elif (( ! backtick_double_quote_active )); then
+              pending_command_substitution=1
+            fi
+          elif (( shell_code_paren_depth > 0 )); then
             (( ! shell_code_double_quote_active )) && pending_command_substitution=1
-          elif (( ! backtick_double_quote_active )); then
+          elif (( ! in_double_quote )); then
             pending_command_substitution=1
           fi
         fi
