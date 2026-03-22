@@ -393,6 +393,78 @@ _zsh_highlight_main__paired_delimiter_closer() {
   esac
 }
 
+_zsh_highlight_main__scan_delimited_argument() {
+  integer i=$1 preserve_nested=${3:-0}
+  local end_delim=$2 quote_context=${4:-unquoted}
+  local -a saved_reply
+
+  while (( i <= $#arg )); do
+    case "$arg[$i]" in
+      "\\")
+        (( i += 2 ))
+        continue
+        ;;
+      '$' | "'" | '"' | '`')
+        saved_reply=($reply)
+        if _zsh_highlight_main_highlighter_highlight_nested_construct $i 0 $quote_context; then
+          (( i = REPLY + 1 ))
+          if (( preserve_nested )); then
+            reply=($saved_reply $reply)
+          else
+            reply=($saved_reply)
+          fi
+          continue
+        fi
+        ;;
+    esac
+    [[ $arg[$i] == $end_delim ]] && break
+    (( i++ ))
+  done
+
+  REPLY=$i
+  (( i <= $#arg ))
+}
+
+_zsh_highlight_main__skip_glob_qualifier_delimited_argument() {
+  integer i=$1
+  local qualifier=$arg[$i] block_delim block_end_delim next_char
+
+  (( i < $#arg )) || return 1
+  next_char=$arg[$(( i + 1 ))]
+  case "$qualifier" in
+    ([ePug])
+      [[ $next_char != [[:alnum:]] ]] || return 1
+      [[ $next_char != ')' ]] || return 1
+      [[ $next_char != '(' ]] || return 1
+      ;;
+    (f)
+      [[ $next_char != [[:alnum:]] ]] || return 1
+      [[ $next_char != [0-7?=+-] ]] || return 1
+      [[ $next_char != ')' ]] || return 1
+      [[ $next_char != '(' ]] || return 1
+      ;;
+    (*)
+      return 1
+      ;;
+  esac
+
+  block_delim=$next_char
+  _zsh_highlight_main__paired_delimiter_closer "$block_delim"
+  block_end_delim=$REPLY
+  (( i += 2 ))
+
+  _zsh_highlight_main__scan_delimited_argument $i "$block_end_delim" 0 unquoted || return 1
+  return 0
+}
+
+_zsh_highlight_main__forms_complete_glob_qualifier() {
+  integer start_pos=0
+  local arg="$1$2"
+  local -a reply
+
+  _zsh_highlight_main_highlighter_highlight_glob_qualifiers >/dev/null 2>&1
+}
+
 _zsh_highlight_main__is_literal_function_name() {
   [[ $1 == [A-Za-z_][A-Za-z0-9_-]# ]]
 }
@@ -864,6 +936,14 @@ _zsh_highlight_main_highlighter_highlight_list()
     last_arg=$arg
     arg=$args[1]
     shift args
+    if [[ ${zsyh_user_options[bareglobqual]:-on} == on ]] &&
+       (( $#args )) &&
+       [[ $args[1] == $'\x29' ]] &&
+       _zsh_highlight_main__forms_complete_glob_qualifier "$arg" "$args[1]"
+    then
+      arg+=$args[1]
+      shift args
+    fi
     if (( $#in_alias )); then
       (( in_alias[1]-- ))
       # Remove leading 0 entries
@@ -1929,7 +2009,7 @@ _zsh_highlight_main_highlighter_highlight_parameter_paren_block()
 {
   integer arg1=$1 i=$1 depth=1 closed=1
   local body_style=$2 delim_style=$3 quote_context=${4:-unquoted}
-  local block_delim block_end_delim
+  local block_delim block_end_delim flag_name
   local -a saved_reply
   reply=()
 
@@ -1941,29 +2021,20 @@ _zsh_highlight_main_highlighter_highlight_parameter_paren_block()
        [[ $arg[$(( i + 1 ))] != ')' ]] &&
        [[ $arg[$(( i + 1 ))] != '(' ]]
     then
+      flag_name=$arg[$i]
       block_delim=$arg[$(( i + 1 ))]
       _zsh_highlight_main__paired_delimiter_closer "$block_delim"
       block_end_delim=$REPLY
       (( i += 2 ))
-      while (( i <= $#arg )); do
-        case "$arg[$i]" in
-          "\\")
-            (( i += 2 ))
-            continue
-            ;;
-          '$' | "'" | '"' | '`')
-            saved_reply=($reply)
-            if _zsh_highlight_main_highlighter_highlight_nested_construct $i 0 $quote_context; then
-              (( i = REPLY ))
-              reply=($saved_reply $reply)
-              (( i++ ))
-              continue
-            fi
-            ;;
-        esac
-        [[ $arg[$i] == $block_end_delim ]] && break
-        (( i++ ))
-      done
+      _zsh_highlight_main__scan_delimited_argument $i "$block_end_delim" 1 "$quote_context" || break
+      (( i = REPLY ))
+      if [[ $flag_name == [lr] ]]; then
+        while (( i < $#arg )) && [[ $arg[$(( i + 1 ))] == $block_delim ]]; do
+          (( i += 2 ))
+          _zsh_highlight_main__scan_delimited_argument $i "$block_end_delim" 1 "$quote_context" || break 2
+          (( i = REPLY ))
+        done
+      fi
       (( i > $#arg )) && break
       continue
     fi
@@ -2381,6 +2452,11 @@ _zsh_highlight_main_highlighter_highlight_glob_qualifiers()
                 (( j++ ))
               done
               (( i = j ))
+              ;;
+            [ePugf])
+              if _zsh_highlight_main__skip_glob_qualifier_delimited_argument $i; then
+                (( i = REPLY ))
+              fi
               ;;
             '$' | "'" | '"' | '`')
               if _zsh_highlight_main_highlighter_highlight_nested_construct $i 0 unquoted; then
