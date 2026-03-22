@@ -104,7 +104,7 @@ _zsh_highlight_highlighter_brackets_paint()
       case $char in
         ('\\')
           if (( backtick_active )); then
-            if [[ \\\`\$ == *$BUFFER[$(( pos + 1 ))]* ]]; then
+            if [[ \\\`\$\"\' == *$BUFFER[$(( pos + 1 ))]* ]]; then
               (( pos++ ))
             fi
           elif [[ \\\`\"\$${histchars[1]}\' == *$BUFFER[$(( pos + 1 ))]* ]]; then
@@ -231,7 +231,7 @@ _zsh_highlight_highlighter_brackets_paint()
         ;;
       "\\")
         if (( backtick_active )); then
-          if [[ \\\`\$ == *$BUFFER[$(( pos + 1 ))]* ]]; then
+          if [[ \\\`\$\"\' == *$BUFFER[$(( pos + 1 ))]* ]]; then
             (( pos++ ))
           fi
         else
