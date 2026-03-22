@@ -350,6 +350,7 @@ _zsh_highlight_main__starts_function_definition() {
 
 _zsh_highlight_main__paired_delimiter_closer() {
   case $1 in
+    ('(') REPLY=')' ;;
     ('[') REPLY=']' ;;
     ('{') REPLY='}' ;;
     ('<') REPLY='>' ;;
@@ -1208,6 +1209,7 @@ _zsh_highlight_main_highlighter_highlight_list()
       local default_path_marker=''
       local lookup_default_path_marker=''
       local lookup_subject_pending_marker=''
+      local lookup_subject_pending_default_path_marker=''
       local env_assign_marker=''
       if [[ $this_word == *':precommand_target_builtin:'* ]]; then
         precommand_mode_marker=':precommand_target_builtin:'
@@ -1231,23 +1233,24 @@ _zsh_highlight_main_highlighter_highlight_list()
       if [[ $this_word == *':lookup_subject_pending:'* ]]; then
         lookup_subject_pending_marker=':lookup_subject_pending:'
       fi
+      if [[ $this_word == *':lookup_subject_pending_default_path:'* ]]; then
+        lookup_subject_pending_default_path_marker=':lookup_subject_pending_default_path:'
+      fi
       if [[ $this_word == *':sudo_opt:'* ]]; then
         local option_state_prefix=':start:'
         if [[ $this_word == *':precommand_name_command:'* ]] && [[ $arg == -*[vV]* ]]; then
           lookup_subject_pending_marker=':lookup_subject_pending:'
         fi
         if [[ $this_word == *':precommand_name_command:'* ]] && [[ $arg == -*p* ]]; then
-          if [[ -n $lookup_subject_pending_marker ]]; then
-            lookup_default_path_marker=':lookup_subject_default_path:'
-          else
-            default_path_marker=':precommand_target_default_path:'
-          fi
+          default_path_marker=':precommand_target_default_path:'
+          lookup_subject_pending_default_path_marker=':lookup_subject_pending_default_path:'
+          [[ -n $lookup_subject_pending_marker ]] && lookup_default_path_marker=':lookup_subject_default_path:'
         fi
         [[ -n $lookup_subject_pending_marker ]] && option_state_prefix=''
         if [[ -n $lookup_subject_pending_marker ]] && [[ $arg != '-'* ]]; then
-          if [[ -n $lookup_default_path_marker ]]; then
-            this_word=':lookup_subject:'"$lookup_default_path_marker"
-            next_word=':lookup_subject:'"$lookup_default_path_marker"
+          if [[ -n $lookup_default_path_marker || -n $lookup_subject_pending_default_path_marker ]]; then
+            this_word=':lookup_subject::lookup_subject_default_path:'
+            next_word=':lookup_subject::lookup_subject_default_path:'
           else
             this_word=':lookup_subject:'
             next_word=':lookup_subject:'
@@ -1266,6 +1269,7 @@ _zsh_highlight_main_highlighter_highlight_list()
           next_word+="$precommand_name_command_marker"
           next_word+="$default_path_marker"
           next_word+="$lookup_subject_pending_marker"
+          next_word+="$lookup_subject_pending_default_path_marker"
           next_word+="$env_assign_marker"
         elif [[ -n $flags_with_argument ]] &&
              {
@@ -1284,6 +1288,7 @@ _zsh_highlight_main_highlighter_highlight_list()
           next_word+="$default_path_marker"
           next_word+="$lookup_default_path_marker"
           next_word+="$lookup_subject_pending_marker"
+          next_word+="$lookup_subject_pending_default_path_marker"
           next_word+="$env_assign_marker"
         elif [[ -n $flags_sans_argument ]] &&
              [[ $arg == '-'[$flags_sans_argument]# ]]; then
@@ -1296,6 +1301,7 @@ _zsh_highlight_main_highlighter_highlight_list()
           next_word+="$default_path_marker"
           next_word+="$lookup_default_path_marker"
           next_word+="$lookup_subject_pending_marker"
+          next_word+="$lookup_subject_pending_default_path_marker"
           next_word+="$env_assign_marker"
         elif [[ -n $flags_solo ]] && 
              {
@@ -1312,6 +1318,7 @@ _zsh_highlight_main_highlighter_highlight_list()
           next_word+="$default_path_marker"
           next_word+="$lookup_default_path_marker"
           next_word+="$lookup_subject_pending_marker"
+          next_word+="$lookup_subject_pending_default_path_marker"
           next_word+="$env_assign_marker"
         elif [[ $arg == '-'* ]]; then
           # Unknown flag.  We don't know whether it takes an argument or not,
@@ -1329,6 +1336,7 @@ _zsh_highlight_main_highlighter_highlight_list()
           next_word+="$default_path_marker"
           next_word+="$lookup_default_path_marker"
           next_word+="$lookup_subject_pending_marker"
+          next_word+="$lookup_subject_pending_default_path_marker"
           next_word+="$env_assign_marker"
         else
           # Not an option flag; nothing to do.  (If the command line is
@@ -1343,6 +1351,7 @@ _zsh_highlight_main_highlighter_highlight_list()
         next_word+="$precommand_name_command_marker"
         next_word+="$default_path_marker"
         next_word+="$lookup_default_path_marker"
+        next_word+="$lookup_subject_pending_default_path_marker"
         next_word+="$env_assign_marker"
       fi
     fi
@@ -2265,27 +2274,26 @@ _zsh_highlight_main_highlighter_highlight_parameter_paren_block()
   while (( ++i <= $#arg )); do
     if [[ $body_style == parameter-expansion-flag ]] &&
        [[ $arg[$i] == [jlrsZ_] ]] &&
-       (( i < $#arg )) &&
-       [[ $arg[$(( i + 1 ))] != [[:alnum:]] ]] &&
-       [[ $arg[$(( i + 1 ))] != ')' ]] &&
-       [[ $arg[$(( i + 1 ))] != '(' ]]
+       (( i < $#arg ))
     then
       flag_name=$arg[$i]
       block_delim=$arg[$(( i + 1 ))]
-      _zsh_highlight_main__paired_delimiter_closer "$block_delim"
-      block_end_delim=$REPLY
-      (( i += 2 ))
-      _zsh_highlight_main__scan_delimited_argument $i "$block_end_delim" 1 "$quote_context" || break
-      (( i = REPLY ))
-      if [[ $flag_name == [lr] ]]; then
-        while (( i < $#arg )) && [[ $arg[$(( i + 1 ))] == $block_delim ]]; do
-          (( i += 2 ))
-          _zsh_highlight_main__scan_delimited_argument $i "$block_end_delim" 1 "$quote_context" || break 2
-          (( i = REPLY ))
-        done
+      if [[ $block_delim != ')' ]]; then
+        _zsh_highlight_main__paired_delimiter_closer "$block_delim"
+        block_end_delim=$REPLY
+        (( i += 2 ))
+        _zsh_highlight_main__scan_delimited_argument $i "$block_end_delim" 1 "$quote_context" || break
+        (( i = REPLY ))
+        if [[ $flag_name == [lr] ]]; then
+          while (( i < $#arg )) && [[ $arg[$(( i + 1 ))] == $block_delim ]]; do
+            (( i += 2 ))
+            _zsh_highlight_main__scan_delimited_argument $i "$block_end_delim" 1 "$quote_context" || break 2
+            (( i = REPLY ))
+          done
+        fi
+        (( i > $#arg )) && break
+        continue
       fi
-      (( i > $#arg )) && break
-      continue
     fi
     case "$arg[$i]" in
       '(')
