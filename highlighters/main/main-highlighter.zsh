@@ -1883,6 +1883,8 @@ _zsh_highlight_main_highlighter_highlight_list()
           (none)        if (( ! in_param )) &&
                            (
                              [[ $command_lookup_mode == normal ]] ||
+                             [[ $command_lookup_mode == command ]] ||
+                             [[ $command_lookup_mode == command-default-path ]] ||
                              [[ $this_word == *':env_assign_ok:'* ]]
                            ) &&
                            _zsh_highlight_main_highlighter_check_assign
@@ -1900,6 +1902,11 @@ _zsh_highlight_main_highlighter_highlight_list()
                             # Discard  :start_of_pipeline:, if present, as '!' is not valid
                             # after assignments.
                             next_word+=':start:'
+                            if [[ $command_lookup_mode == command ]]; then
+                              next_word+=':precommand_target_command:'
+                            elif [[ $command_lookup_mode == command-default-path ]]; then
+                              next_word+=':precommand_target_command::precommand_target_default_path:'
+                            fi
                             [[ $this_word == *':env_assign_ok:'* ]] && next_word+=':precommand_target_external::env_assign_ok::regular:'
                             if (( i <= $#arg )); then
                               () {
