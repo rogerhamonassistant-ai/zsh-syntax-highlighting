@@ -107,7 +107,7 @@ _zsh_highlight_highlighter_brackets_paint()
             if [[ \\\`\$ == *$BUFFER[$(( pos + 1 ))]* ]]; then
               (( pos++ ))
             fi
-          elif [[ \\\`\"\$${histchars[1]} == *$BUFFER[$(( pos + 1 ))]* ]]; then
+          elif [[ \\\`\"\$${histchars[1]}\' == *$BUFFER[$(( pos + 1 ))]* ]]; then
             (( pos++ ))
           fi
           continue
@@ -235,7 +235,10 @@ _zsh_highlight_highlighter_brackets_paint()
             (( pos++ ))
           fi
         else
-          if [[ ${BUFFER[$(( pos + 1 ))]:-} != [\(\)\[\]\{\}] ]]; then
+          if [[ ${BUFFER[$(( pos + 1 ))]:-} == [\(\)\[\]\{\}] ]]; then
+            literal_levelpos[$(( pos + 1 ))]=-1
+            (( pos++ ))
+          else
             (( pos++ ))
           fi
         fi
