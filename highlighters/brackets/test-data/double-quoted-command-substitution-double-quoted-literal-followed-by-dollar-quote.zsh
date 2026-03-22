@@ -8,4 +8,5 @@ expected_region_highlight=(
   "8 8 bracket-level-1" # (
   "16 16 bracket-error" # (
   "18 18 bracket-level-1" # )
+  "23 23 bracket-error" # (
 )
