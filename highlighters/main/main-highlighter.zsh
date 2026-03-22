@@ -2516,7 +2516,9 @@ _zsh_highlight_main_highlighter_highlight_parameter_expansion()
            [[ $arg[$i] == '$' ]]
         then
           local next_subject_char=${arg[$(( i + 1 ))]:-}
-          if [[ -z $next_subject_char ]] || [[ $next_subject_char == '}' ]] ||
+          if [[ $next_subject_char == '{' ]] || [[ $next_subject_char == '(' ]]; then
+            :
+          elif [[ -z $next_subject_char ]] || [[ $next_subject_char == '}' ]] ||
              [[ $next_subject_char == ':' ]] || [[ $next_subject_char == '[' ]]
           then
             (( i++ ))
@@ -2536,11 +2538,12 @@ _zsh_highlight_main_highlighter_highlight_parameter_expansion()
             substring_operator=0
             (( i += operator_len ))
             continue
+          else
+            invalid_special_parameter=1
+            parser_state=invalid
+            (( i++ ))
+            continue
           fi
-          invalid_special_parameter=1
-          parser_state=invalid
-          (( i++ ))
-          continue
         fi
         saved_reply=($highlights)
         if _zsh_highlight_main_highlighter_highlight_nested_construct $i 0 $quote_context; then
@@ -2654,6 +2657,14 @@ _zsh_highlight_main_highlighter_highlight_parameter_expansion()
             invalid_special_parameter=1
             parser_state=invalid
             (( i++ ))
+            continue
+          fi
+          if [[ $arg[$i] == '#' ]] &&
+             (( i == subject_start )) &&
+             [[ ${arg[$(( i + 1 ))]:-} == '}' ]]
+          then
+            (( i++ ))
+            subject_start=$i
             continue
           fi
           if [[ $arg[$i] == '#' ]] && (( i == subject_start )); then
