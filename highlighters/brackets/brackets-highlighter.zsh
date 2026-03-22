@@ -199,7 +199,15 @@ _zsh_highlight_highlighter_brackets_paint()
           if (( arithmetic_active )); then
             continue
           elif (( backtick_active )); then
-            if [[ \\\`\$\"\' == *$BUFFER[$(( pos + 1 ))]* ]]; then
+            if [[ ${BUFFER[$(( pos + 1 ))]:-} == '\' ]] &&
+               [[ ${BUFFER[$(( pos + 2 ))]:-} == [\(\)\[\]\{\}] ]]
+            then
+              literal_levelpos[$(( pos + 2 ))]=-1
+              (( pos += 2 ))
+            elif [[ ${BUFFER[$(( pos + 1 ))]:-} == [\(\)\[\]\{\}] ]]; then
+              literal_levelpos[$(( pos + 1 ))]=-1
+              (( pos++ ))
+            elif [[ \\\`\$\"\' == *$BUFFER[$(( pos + 1 ))]* ]]; then
               (( pos++ ))
             fi
           elif [[ \\\`\"\$${histchars[1]}\' == *$BUFFER[$(( pos + 1 ))]* ]]; then
@@ -375,11 +383,23 @@ _zsh_highlight_highlighter_brackets_paint()
         if (( arithmetic_active )); then
           continue
         elif (( backtick_active )); then
-          if [[ \\\`\$\"\' == *$BUFFER[$(( pos + 1 ))]* ]]; then
+          if [[ ${BUFFER[$(( pos + 1 ))]:-} == '\' ]] &&
+             [[ ${BUFFER[$(( pos + 2 ))]:-} == [\(\)\[\]\{\}] ]]
+          then
+            literal_levelpos[$(( pos + 2 ))]=-1
+            (( pos += 2 ))
+          elif [[ ${BUFFER[$(( pos + 1 ))]:-} == [\(\)\[\]\{\}] ]]; then
+            literal_levelpos[$(( pos + 1 ))]=-1
+            (( pos++ ))
+          elif [[ \\\`\$\"\' == *$BUFFER[$(( pos + 1 ))]* ]]; then
             (( pos++ ))
           fi
         else
-          if [[ ${BUFFER[$(( pos + 1 ))]:-} == [\(\)\[\]\{\}] ]]; then
+          if (( shell_code_double_quote_active )) &&
+             [[ ${BUFFER[$(( pos + 1 ))]:-} == [\(\)\[\]\{\}] ]]
+          then
+            continue
+          elif [[ ${BUFFER[$(( pos + 1 ))]:-} == [\(\)\[\]\{\}] ]]; then
             literal_levelpos[$(( pos + 1 ))]=-1
             (( pos++ ))
           else
