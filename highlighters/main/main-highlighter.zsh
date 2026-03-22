@@ -1052,10 +1052,14 @@ _zsh_highlight_main_highlighter_highlight_list()
     if (( ! in_redirection )); then
       local precommand_mode_marker=''
       local lookup_subject_pending_marker=''
+      local env_assign_marker=''
       if [[ $this_word == *':precommand_target_builtin:'* ]]; then
         precommand_mode_marker=':precommand_target_builtin:'
       elif [[ $this_word == *':precommand_target_external:'* ]]; then
         precommand_mode_marker=':precommand_target_external:'
+      fi
+      if [[ $this_word == *':env_assign_ok:'* ]]; then
+        env_assign_marker=':env_assign_ok:'
       fi
       if [[ $this_word == *':lookup_subject_pending:'* ]]; then
         lookup_subject_pending_marker=':lookup_subject_pending:'
@@ -1081,6 +1085,7 @@ _zsh_highlight_main_highlighter_highlight_list()
           this_word=${this_word//:start:/}
           next_word=':sudo_arg:'"$precommand_mode_marker"
           next_word+="$lookup_subject_pending_marker"
+          next_word+="$env_assign_marker"
         elif [[ -n $flags_with_argument ]] &&
              {
                # Trenary
@@ -1095,6 +1100,7 @@ _zsh_highlight_main_highlighter_highlight_list()
           next_word+=':sudo_opt:'
           next_word+="$precommand_mode_marker"
           next_word+="$lookup_subject_pending_marker"
+          next_word+="$env_assign_marker"
         elif [[ -n $flags_sans_argument ]] &&
              [[ $arg == '-'[$flags_sans_argument]# ]]; then
           # Flag that requires no argument
@@ -1103,6 +1109,7 @@ _zsh_highlight_main_highlighter_highlight_list()
           next_word+=':sudo_opt:'
           next_word+="$precommand_mode_marker"
           next_word+="$lookup_subject_pending_marker"
+          next_word+="$env_assign_marker"
         elif [[ -n $flags_solo ]] && 
              {
                # Trenary
@@ -1115,6 +1122,7 @@ _zsh_highlight_main_highlighter_highlight_list()
           this_word=':sudo_opt:'
           next_word=':regular:'"$precommand_mode_marker" # no :start:, nor :sudo_opt: since we don't know whether the solo flag takes an argument or not
           next_word+="$lookup_subject_pending_marker"
+          next_word+="$env_assign_marker"
         elif [[ $arg == '-'* ]]; then
           # Unknown flag.  We don't know whether it takes an argument or not,
           # so modify $next_word as we do for flags that require no argument.
@@ -1128,6 +1136,7 @@ _zsh_highlight_main_highlighter_highlight_list()
           next_word+=':sudo_opt:'
           next_word+="$precommand_mode_marker"
           next_word+="$lookup_subject_pending_marker"
+          next_word+="$env_assign_marker"
         else
           # Not an option flag; nothing to do.  (If the command line is
           # syntactically valid, ${this_word//:sudo_opt:/} should be
@@ -1138,6 +1147,7 @@ _zsh_highlight_main_highlighter_highlight_list()
         next_word+=':sudo_opt:'
         next_word+=':start:'
         next_word+="$precommand_mode_marker"
+        next_word+="$env_assign_marker"
       fi
     fi
 
@@ -1925,7 +1935,7 @@ _zsh_highlight_main_highlighter_highlight_parameter_paren_block()
 
   while (( ++i <= $#arg )); do
     if [[ $body_style == parameter-expansion-flag ]] &&
-       [[ $arg[$i] == [jsZ_] ]] &&
+       [[ $arg[$i] == [jlrsZ_] ]] &&
        (( i < $#arg )) &&
        [[ $arg[$(( i + 1 ))] != [[:alnum:]] ]] &&
        [[ $arg[$(( i + 1 ))] != ')' ]] &&
@@ -2262,11 +2272,24 @@ _zsh_highlight_main_highlighter_highlight_parameter_expansion()
           if (( i == subject_start )) && { [[ $arg[$i] == '?' ]] || [[ $arg[$i] == '-' ]]; }; then
             local next_subject_char=${arg[$(( i + 1 ))]:-}
             if [[ -z $next_subject_char ]] || [[ $next_subject_char == '}' ]] ||
-               [[ $next_subject_char == ':' ]] || [[ $next_subject_char == '[' ]] ||
-               [[ $next_subject_char == [#%/+=?-] ]]
+               [[ $next_subject_char == ':' ]] || [[ $next_subject_char == '[' ]]
             then
               (( i++ ))
               subject_start=$i
+              continue
+            elif [[ $next_subject_char == [#%/+=?-] ]]; then
+              operator_len=1
+              if [[ $next_subject_char == [#%/] && ${arg[$(( i + 2 ))]:-} == $next_subject_char ]]; then
+                operator_len=2
+              elif [[ $next_subject_char == ':' && ${arg[$(( i + 2 ))]:-} == ':' && ${arg[$(( i + 3 ))]:-} == '=' ]]; then
+                operator_len=3
+              elif [[ $next_subject_char == ':' && ${arg[$(( i + 2 ))]:-} == [\-+=?\#\*\|\^/] ]]; then
+                operator_len=2
+              fi
+              highlights+=($(( start_pos + i )) $(( start_pos + i + operator_len )) parameter-expansion-operator)
+              parser_state=rhs
+              substring_operator=0
+              (( i += operator_len ))
               continue
             fi
             invalid_special_parameter=1
