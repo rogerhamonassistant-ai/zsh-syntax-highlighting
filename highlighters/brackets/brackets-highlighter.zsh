@@ -113,6 +113,19 @@ _zsh_highlight_brackets_is_arithmetic_expansion()
         (( pos++ ))
         continue
         ;;
+      (backtick:"\\")
+        if [[ ${BUFFER[$(( pos + 1 ))]:-} == [\$\\\`] ]]; then
+          (( pos += 2 ))
+        else
+          (( pos++ ))
+        fi
+        continue
+        ;;
+      (backtick:'`')
+        quote_mode=''
+        (( pos++ ))
+        continue
+        ;;
     esac
 
     if [[ -n $quote_mode ]]; then
@@ -126,6 +139,9 @@ _zsh_highlight_brackets_is_arithmetic_expansion()
         ;;
       '"')
         quote_mode=double
+        ;;
+      '`')
+        quote_mode=backtick
         ;;
       '(')
         (( paren_depth++ ))
