@@ -438,10 +438,20 @@ _zsh_highlight_main__precommand_target_mode() {
     (builtin)
       REPLY=builtin
       ;;
-    (-|exec|noglob)
+    (-|noglob)
       REPLY=normal
       ;;
-    (command|nice|doas|pkexec|sudo|stdbuf|eatmydata|catchsegv|nohup|setsid|env|ionice|strace|proxychains|torsocks|torify|ssh-agent|tabbed|chronic|ifne|grc|cpulimit|ktrace|caffeinate)
+    (exec)
+      if [[ ${zsyh_user_options[posixbuiltins]:-off} == on ]]; then
+        REPLY=external
+      else
+        REPLY=normal
+      fi
+      ;;
+    (command)
+      REPLY=command
+      ;;
+    (nice|doas|pkexec|sudo|stdbuf|eatmydata|catchsegv|nohup|setsid|env|ionice|strace|proxychains|torsocks|torify|ssh-agent|tabbed|chronic|ifne|grc|cpulimit|ktrace|caffeinate)
       REPLY=external
       ;;
     (*)
@@ -473,6 +483,43 @@ _zsh_highlight_main__external_target_type() {
   [[ $REPLY != none ]]
 }
 
+_zsh_highlight_main__default_command_path() {
+  if [[ -n ${_zsh_highlight_main__default_command_path_cache-} ]]; then
+    REPLY=$_zsh_highlight_main__default_command_path_cache
+    return 0
+  fi
+
+  REPLY=$(command -p getconf PATH 2>/dev/null)
+  [[ -n $REPLY ]] || REPLY='/bin:/usr/bin'
+  typeset -g _zsh_highlight_main__default_command_path_cache=$REPLY
+}
+
+_zsh_highlight_main__default_path_target_type() {
+  unset REPLY
+  local cmd_path
+  _zsh_highlight_main__default_command_path
+  cmd_path=$REPLY
+  ( PATH="$cmd_path" builtin whence -p -- "$1" >/dev/null 2>&1 ) && REPLY=command
+  [[ -n $REPLY ]] || REPLY=none
+  [[ $REPLY != none ]]
+}
+
+_zsh_highlight_main__command_target_type() {
+  local subject=$1 use_default_path=${2:-0}
+
+  if [[ ${zsyh_user_options[posixbuiltins]:-off} == on ]]; then
+    _zsh_highlight_main__builtin_target_type "$subject"
+    [[ $REPLY != none ]] && return 0
+  fi
+
+  unset REPLY
+  if (( use_default_path )); then
+    _zsh_highlight_main__default_path_target_type "$subject"
+  else
+    _zsh_highlight_main__external_target_type "$subject"
+  fi
+}
+
 _zsh_highlight_main__is_precommand_for_mode() {
   local arg=$1 mode=$2
 
@@ -487,6 +534,14 @@ _zsh_highlight_main__is_precommand_for_mode() {
       ;;
     (builtin)
       if (( ${+precommand_options[$arg]} )); then
+        _zsh_highlight_main__builtin_target_type "$arg" && return 0
+      fi
+      return 1
+      ;;
+    (command)
+      if [[ ${zsyh_user_options[posixbuiltins]:-off} == on ]] &&
+         (( ${+precommand_options[$arg]} ))
+      then
         _zsh_highlight_main__builtin_target_type "$arg" && return 0
       fi
       return 1
@@ -524,6 +579,15 @@ _zsh_highlight_main__lookup_subject_type() {
       ;;
     (external)
       _zsh_highlight_main__external_target_type "$subject"
+      ;;
+    (external-default-path)
+      _zsh_highlight_main__default_path_target_type "$subject"
+      ;;
+    (command)
+      _zsh_highlight_main__command_target_type "$subject" 0
+      ;;
+    (command-default-path)
+      _zsh_highlight_main__command_target_type "$subject" 1
       ;;
     (*)
       if zmodload -e zsh/parameter; then
@@ -1095,12 +1159,22 @@ _zsh_highlight_main_highlighter_highlight_list()
     # Parse the sudo command line
     if (( ! in_redirection )); then
       local precommand_mode_marker=''
+      local precommand_name_command_marker=''
+      local default_path_marker=''
       local lookup_subject_pending_marker=''
       local env_assign_marker=''
       if [[ $this_word == *':precommand_target_builtin:'* ]]; then
         precommand_mode_marker=':precommand_target_builtin:'
       elif [[ $this_word == *':precommand_target_external:'* ]]; then
         precommand_mode_marker=':precommand_target_external:'
+      elif [[ $this_word == *':precommand_target_command:'* ]]; then
+        precommand_mode_marker=':precommand_target_command:'
+      fi
+      if [[ $this_word == *':precommand_target_default_path:'* ]]; then
+        default_path_marker=':precommand_target_default_path:'
+      fi
+      if [[ $this_word == *':precommand_name_command:'* ]]; then
+        precommand_name_command_marker=':precommand_name_command:'
       fi
       if [[ $this_word == *':env_assign_ok:'* ]]; then
         env_assign_marker=':env_assign_ok:'
@@ -1113,10 +1187,18 @@ _zsh_highlight_main_highlighter_highlight_list()
         if [[ $this_word == *':precommand_name_command:'* ]] && [[ $arg == -*[vV]* ]]; then
           lookup_subject_pending_marker=':lookup_subject_pending:'
         fi
+        if [[ $this_word == *':precommand_name_command:'* ]] && [[ $arg == -*p* ]]; then
+          default_path_marker=':precommand_target_default_path:'
+        fi
         [[ -n $lookup_subject_pending_marker ]] && option_state_prefix=''
         if [[ -n $lookup_subject_pending_marker ]] && [[ $arg != '-'* ]]; then
-          this_word=':lookup_subject:'
-          next_word=':lookup_subject:'
+          if [[ $this_word == *':precommand_name_command:'* ]] && [[ -n $default_path_marker ]]; then
+            this_word=':lookup_subject::precommand_target_command:'"$default_path_marker"
+            next_word=':lookup_subject::precommand_target_command:'"$default_path_marker"
+          else
+            this_word=':lookup_subject:'
+            next_word=':lookup_subject:'
+          fi
         elif [[ -n $flags_with_argument ]] &&
            { 
              # Trenary
@@ -1128,6 +1210,8 @@ _zsh_highlight_main_highlighter_highlight_list()
           # Flag that requires an argument
           this_word=${this_word//:start:/}
           next_word=':sudo_arg:'"$precommand_mode_marker"
+          next_word+="$precommand_name_command_marker"
+          next_word+="$default_path_marker"
           next_word+="$lookup_subject_pending_marker"
           next_word+="$env_assign_marker"
         elif [[ -n $flags_with_argument ]] &&
@@ -1143,6 +1227,8 @@ _zsh_highlight_main_highlighter_highlight_list()
           next_word+="$option_state_prefix"
           next_word+=':sudo_opt:'
           next_word+="$precommand_mode_marker"
+          next_word+="$precommand_name_command_marker"
+          next_word+="$default_path_marker"
           next_word+="$lookup_subject_pending_marker"
           next_word+="$env_assign_marker"
         elif [[ -n $flags_sans_argument ]] &&
@@ -1152,6 +1238,8 @@ _zsh_highlight_main_highlighter_highlight_list()
           next_word+="$option_state_prefix"
           next_word+=':sudo_opt:'
           next_word+="$precommand_mode_marker"
+          next_word+="$precommand_name_command_marker"
+          next_word+="$default_path_marker"
           next_word+="$lookup_subject_pending_marker"
           next_word+="$env_assign_marker"
         elif [[ -n $flags_solo ]] && 
@@ -1165,6 +1253,8 @@ _zsh_highlight_main_highlighter_highlight_list()
           # Solo flags
           this_word=':sudo_opt:'
           next_word=':regular:'"$precommand_mode_marker" # no :start:, nor :sudo_opt: since we don't know whether the solo flag takes an argument or not
+          next_word+="$precommand_name_command_marker"
+          next_word+="$default_path_marker"
           next_word+="$lookup_subject_pending_marker"
           next_word+="$env_assign_marker"
         elif [[ $arg == '-'* ]]; then
@@ -1179,6 +1269,8 @@ _zsh_highlight_main_highlighter_highlight_list()
           next_word+="$option_state_prefix"
           next_word+=':sudo_opt:'
           next_word+="$precommand_mode_marker"
+          next_word+="$precommand_name_command_marker"
+          next_word+="$default_path_marker"
           next_word+="$lookup_subject_pending_marker"
           next_word+="$env_assign_marker"
         else
@@ -1191,6 +1283,8 @@ _zsh_highlight_main_highlighter_highlight_list()
         next_word+=':sudo_opt:'
         next_word+=':start:'
         next_word+="$precommand_mode_marker"
+        next_word+="$precommand_name_command_marker"
+        next_word+="$default_path_marker"
         next_word+="$env_assign_marker"
       fi
     fi
@@ -1206,6 +1300,17 @@ _zsh_highlight_main_highlighter_highlight_list()
         elif [[ $this_word == *':precommand_target_external:'* ]]; then
           lookup_mode=external
           lookup_mode_marker=':precommand_target_external:'
+        elif [[ $this_word == *':precommand_target_command:'* ]]; then
+          lookup_mode=command
+          lookup_mode_marker=':precommand_target_command:'
+        fi
+        if [[ $this_word == *':precommand_target_default_path:'* ]]; then
+          if [[ $lookup_mode == command ]]; then
+            lookup_mode=command-default-path
+          elif [[ $lookup_mode == external ]]; then
+            lookup_mode=external-default-path
+          fi
+          lookup_mode_marker+=':precommand_target_default_path:'
         fi
         _zsh_highlight_main__lookup_subject_type "$lookup_mode" "$arg"
         _zsh_highlight_main__lookup_subject_style "$REPLY"
@@ -1405,6 +1510,15 @@ _zsh_highlight_main_highlighter_highlight_list()
         command_lookup_mode=builtin
       elif [[ $this_word == *':precommand_target_external:'* ]]; then
         command_lookup_mode=external
+      elif [[ $this_word == *':precommand_target_command:'* ]]; then
+        command_lookup_mode=command
+      fi
+      if [[ $this_word == *':precommand_target_default_path:'* ]]; then
+        if [[ $command_lookup_mode == command ]]; then
+          command_lookup_mode=command-default-path
+        elif [[ $command_lookup_mode == external ]]; then
+          command_lookup_mode=external-default-path
+        fi
       fi
 
       local -a function_lookahead
@@ -1447,6 +1561,9 @@ _zsh_highlight_main_highlighter_highlight_list()
           (external)
             next_word+=':precommand_target_external:'
             ;;
+          (command)
+            next_word+=':precommand_target_command:'
+            ;;
         esac
         [[ $arg == command ]] && next_word+=':precommand_name_command:'
         if [[ $arg == 'exec' || $arg == 'env' ]]; then
@@ -1475,8 +1592,17 @@ _zsh_highlight_main_highlighter_highlight_list()
         if [[ $command_lookup_mode == builtin ]]; then
           _zsh_highlight_main__builtin_target_type "$arg"
           res=$REPLY
+        elif [[ $command_lookup_mode == command ]]; then
+          _zsh_highlight_main__command_target_type "$arg" 0
+          res=$REPLY
+        elif [[ $command_lookup_mode == command-default-path ]]; then
+          _zsh_highlight_main__command_target_type "$arg" 1
+          res=$REPLY
         elif [[ $command_lookup_mode == external ]]; then
           _zsh_highlight_main__external_target_type "$arg"
+          res=$REPLY
+        elif [[ $command_lookup_mode == external-default-path ]]; then
+          _zsh_highlight_main__default_path_target_type "$arg"
           res=$REPLY
         fi
         case $res in
