@@ -348,42 +348,6 @@ _zsh_highlight_main__starts_function_definition() {
   return 1
 }
 
-_zsh_highlight_main__raw_starts_newline_function_parens() {
-  local raw=$1
-  integer i=1 saw_newline=0
-
-  while (( i <= $#raw )); do
-    case $raw[$i] in
-      (' '|$'\t')
-        (( i++ ))
-        continue
-        ;;
-      ($'\n')
-        saw_newline=1
-        (( i++ ))
-        continue
-        ;;
-      ($histchars[3])
-        if (( saw_newline )) && [[ ${zsyh_user_options[interactivecomments]:-off} == on ]]; then
-          while (( i <= $#raw )) && [[ $raw[$i] != $'\n' ]]; do
-            (( i++ ))
-          done
-          continue
-        fi
-        return 1
-        ;;
-    esac
-
-    if (( saw_newline )) && [[ $raw[$i,$(( i + 1 ))] == '()' ]]; then
-      return 0
-    fi
-
-    return 1
-  done
-
-  return 1
-}
-
 _zsh_highlight_main__paired_delimiter_closer() {
   case $1 in
     ('[') REPLY=']' ;;
@@ -1444,26 +1408,21 @@ _zsh_highlight_main_highlighter_highlight_list()
       fi
 
       local -a function_lookahead
-      local raw_newline_function_parens=false
       function_lookahead=( "${args[@]}" )
       if [[ ${function_lookahead[1]:-} == ';' ]] && [[ $proc_buf[1] == $'\n' ]]; then
         function_lookahead[1]=$'\n'
       fi
-      _zsh_highlight_main__raw_starts_newline_function_parens "$proc_buf" && raw_newline_function_parens=true
 
       if (( ! in_param )) &&
          [[ $arg != function ]] &&
+         [[ ${proc_buf[1]:-} != $'\n' ]] &&
          ! $saw_assignment &&
          (
-           ( $raw_newline_function_parens && _zsh_highlight_main__is_literal_function_name "$arg" ) ||
            (
-             (
-               [[ ${function_lookahead[1]:-} == '()' ]] ||
-               [[ ${function_lookahead[1]:-} == $'\n' ]] ||
-               [[ ${zsyh_user_options[multifuncdef]:-off} == on ]]
-             ) &&
-             _zsh_highlight_main__starts_function_definition "$arg" "${function_lookahead[@]}"
-           )
+             [[ ${function_lookahead[1]:-} == '()' ]] ||
+             [[ ${zsyh_user_options[multifuncdef]:-off} == on ]]
+           ) &&
+           _zsh_highlight_main__starts_function_definition "$arg" "${function_lookahead[@]}"
          )
       then
         style=function
