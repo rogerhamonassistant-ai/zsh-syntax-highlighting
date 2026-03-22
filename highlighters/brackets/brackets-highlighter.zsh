@@ -149,12 +149,7 @@ _zsh_highlight_highlighter_brackets_paint()
             _zsh_highlight_brackets_skip_quoted_region dollar-single $(( pos + 2 ))
             pos=$REPLY
             continue
-          elif [[ $BUFFER[$(( pos + 1 ))] == '(' ]] &&
-               (
-                 (( ! backtick_active )) ||
-                 ( (( shell_code_paren_depth > backtick_base_shell_depth )) || (( backtick_double_quote_active )) )
-               )
-          then
+          elif [[ $BUFFER[$(( pos + 1 ))] == '(' ]]; then
             pending_command_substitution=1
           fi
           ;;
@@ -225,7 +220,15 @@ _zsh_highlight_highlighter_brackets_paint()
             pos=$REPLY
             continue
           fi
-        elif [[ $BUFFER[$(( pos + 1 ))] == '(' ]] && (( backtick_active )) && (( backtick_double_quote_active || shell_code_paren_depth > 0 )); then
+        elif [[ $BUFFER[$(( pos + 1 ))] == '(' ]] && (( backtick_active )); then
+          pending_command_substitution=1
+        fi
+        ;;
+      [\<\>\=])
+        if (( backtick_active )) &&
+           (( ! backtick_double_quote_active )) &&
+           [[ $BUFFER[$(( pos + 1 ))] == '(' ]]
+        then
           pending_command_substitution=1
         fi
         ;;
