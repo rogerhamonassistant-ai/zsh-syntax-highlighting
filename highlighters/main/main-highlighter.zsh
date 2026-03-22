@@ -523,27 +523,23 @@ _zsh_highlight_main__lookup_subject_type_default_path() {
   local subject=$1
 
   if zmodload -e zsh/parameter; then
-    if (( ${+galiases[(e)$subject]} )); then
-      REPLY='global alias'
-    elif (( $+aliases[(e)$subject] )); then
-      REPLY=alias
-    elif [[ $subject == *.* && -n ${subject%.*} ]] && (( $+saliases[(e)${subject##*.}] )); then
-      REPLY='suffix alias'
-    elif (( $reswords[(Ie)$subject] )); then
-      REPLY=reserved
-    elif (( $+functions[(e)$subject] )); then
-      REPLY=function
-    elif (( $+builtins[(e)$subject] )); then
+    if (( $+builtins[(e)$subject] )); then
       REPLY=builtin
     else
       _zsh_highlight_main__default_path_target_type "$subject"
     fi
   else
     _zsh_highlight_main__type "$subject"
-    if [[ $REPLY == command ]]; then
+    if [[ $REPLY == builtin ]]; then
+      :
+    elif [[ $REPLY == command ]]; then
       _zsh_highlight_main__default_path_target_type "$subject"
+    else
+      REPLY=none
     fi
   fi
+
+  [[ -n $REPLY ]] || REPLY=none
 }
 
 _zsh_highlight_main__is_precommand_for_mode() {
@@ -1385,6 +1381,7 @@ _zsh_highlight_main_highlighter_highlight_list()
         _zsh_highlight_main_add_region_highlight $start_pos $end_pos $style
         continue
       fi
+      local next_function_token=${args[1]:-}
       if [[ $this_word == *':function_header:'* ]]; then
         if [[ $arg == $'\n' ]]; then
           style=commandseparator
@@ -1394,7 +1391,21 @@ _zsh_highlight_main_highlighter_highlight_list()
           next_word=':function_header:'
         elif _zsh_highlight_main__is_function_name "$arg"; then
           style=function
-          next_word=':function_header_named:'
+          if [[ -z $next_function_token ]] ||
+             [[ $next_function_token == $histchars[3]* ]]
+          then
+            next_word=':function_header_named:'
+          elif [[ $next_function_token == $'\n' ]]; then
+            next_word=':function_header_after_newline:'
+          elif [[ $next_function_token == '()' ]] ||
+               _zsh_highlight_main__is_function_name "$next_function_token"
+          then
+            next_word=':function_header_named:'
+          elif [[ $next_function_token == ';' || $next_function_token == $'\x7b' ]]; then
+            next_word=':function_body_pending:'
+          else
+            next_word=':start::start_of_pipeline:'
+          fi
         elif [[ $arg == '()' ]]; then
           style=reserved-word
           next_word=':function_body_pending:'
@@ -1413,10 +1424,33 @@ _zsh_highlight_main_highlighter_highlight_list()
           next_word=':function_header_after_newline:'
         elif _zsh_highlight_main__is_function_name "$arg"; then
           style=function
-          next_word=':function_header_named:'
+          if [[ -z $next_function_token ]] ||
+             [[ $next_function_token == $histchars[3]* ]]
+          then
+            next_word=':function_header_named:'
+          elif [[ $next_function_token == $'\n' ]]; then
+            next_word=':function_header_after_newline:'
+          elif [[ $next_function_token == '()' ]] ||
+               _zsh_highlight_main__is_function_name "$next_function_token"
+          then
+            next_word=':function_header_named:'
+          elif [[ $next_function_token == ';' || $next_function_token == $'\x7b' ]]; then
+            next_word=':function_body_pending:'
+          else
+            next_word=':start::start_of_pipeline:'
+          fi
         elif [[ $arg == '()' ]]; then
           style=reserved-word
-          next_word=':function_body_pending:'
+          if [[ -z $next_function_token ]] ||
+             [[ $next_function_token == $'\n' ]] ||
+             [[ $next_function_token == ';' ]] ||
+             [[ $next_function_token == $'\x7b' ]] ||
+             [[ $next_function_token == $histchars[3]* ]]
+          then
+            next_word=':function_body_pending:'
+          else
+            next_word=':start::start_of_pipeline:'
+          fi
         elif [[ $arg == ';' ]]; then
           style=commandseparator
           next_word=':function_body_pending:'
@@ -1425,10 +1459,12 @@ _zsh_highlight_main_highlighter_highlight_list()
           braces_stack='Y'"$braces_stack"
           next_word=':start::start_of_pipeline:'
         else
-          style=unknown-token
+          this_word=':start::start_of_pipeline:'
         fi
-        _zsh_highlight_main_add_region_highlight $start_pos $end_pos $style
-        continue
+        if [[ $this_word == *':function_header_named:'* ]]; then
+          _zsh_highlight_main_add_region_highlight $start_pos $end_pos $style
+          continue
+        fi
       elif [[ $this_word == *':function_header_after_newline:'* ]]; then
         if [[ $arg == $'\n' ]]; then
           style=commandseparator
@@ -1444,10 +1480,16 @@ _zsh_highlight_main_highlighter_highlight_list()
           braces_stack='Y'"$braces_stack"
           next_word=':start::start_of_pipeline:'
         else
-          style=unknown-token
+          if [[ $next_function_token == $'\x7b' ]]; then
+            style=unknown-token
+          else
+            this_word=':start::start_of_pipeline:'
+          fi
         fi
-        _zsh_highlight_main_add_region_highlight $start_pos $end_pos $style
-        continue
+        if [[ $this_word == *':function_header_after_newline:'* ]]; then
+          _zsh_highlight_main_add_region_highlight $start_pos $end_pos $style
+          continue
+        fi
       elif [[ $this_word == *':function_body_pending:'* ]]; then
         if [[ $arg == $'\n' || $arg == ';' ]]; then
           style=commandseparator
@@ -1469,7 +1511,16 @@ _zsh_highlight_main_highlighter_highlight_list()
           next_word=':function_name_list:'
         elif [[ $arg == '()' ]]; then
           style=reserved-word
-          next_word=':start::start_of_pipeline:'
+          if [[ -z $next_function_token ]] ||
+             [[ $next_function_token == $'\n' ]] ||
+             [[ $next_function_token == ';' ]] ||
+             [[ $next_function_token == $'\x7b' ]] ||
+             [[ $next_function_token == $histchars[3]* ]]
+          then
+            next_word=':function_body_pending:'
+          else
+            next_word=':start::start_of_pipeline:'
+          fi
         elif _zsh_highlight_main__is_function_name "$arg"; then
           style=function
           next_word=':function_name_list:'
@@ -1537,11 +1588,40 @@ _zsh_highlight_main_highlighter_highlight_list()
       elif [[ $arg == $'\n' ]] && [[ $this_word == *':function_header:'* ]]; then
         next_word=':function_header:'
       elif [[ $arg == $'\n' ]] && [[ $this_word == *':function_header_named:'* ]]; then
-        next_word=':function_header_after_newline:'
+        if [[ -z $next_function_token ]] ||
+           [[ $next_function_token == $histchars[3]* ]] ||
+           [[ $next_function_token == '()' ]] ||
+           [[ $next_function_token == ';' ]] ||
+           [[ $next_function_token == $'\x7b' ]] ||
+           [[ $next_function_token == $'\n' ]]
+        then
+          next_word=':function_header_after_newline:'
+        else
+          next_word=':start::start_of_pipeline:'
+        fi
       elif [[ $arg == $'\n' ]] && [[ $this_word == *':function_header_after_newline:'* ]]; then
-        next_word=':function_header_after_newline:'
+        if [[ -z $next_function_token ]] ||
+           [[ $next_function_token == $histchars[3]* ]] ||
+           [[ $next_function_token == '()' ]] ||
+           [[ $next_function_token == ';' ]] ||
+           [[ $next_function_token == $'\x7b' ]] ||
+           [[ $next_function_token == $'\n' ]]
+        then
+          next_word=':function_header_after_newline:'
+        else
+          next_word=':start::start_of_pipeline:'
+        fi
       elif [[ $arg == $'\n' ]] && [[ $this_word == *':function_body_pending:'* ]]; then
-        next_word=':function_body_pending:'
+        if [[ -z $next_function_token ]] ||
+           [[ $next_function_token == $histchars[3]* ]] ||
+           [[ $next_function_token == ';' ]] ||
+           [[ $next_function_token == $'\x7b' ]] ||
+           [[ $next_function_token == $'\n' ]]
+        then
+          next_word=':function_body_pending:'
+        else
+          next_word=':start::start_of_pipeline:'
+        fi
       elif [[ $arg == $'\n' ]] && [[ $this_word == *':function_name_list:'* ]]; then
         next_word=':function_name_list:'
       elif [[ $arg == ';' ]] && $in_array_assignment; then
