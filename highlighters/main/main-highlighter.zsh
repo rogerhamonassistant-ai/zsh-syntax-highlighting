@@ -438,6 +438,11 @@ _zsh_highlight_main__forms_complete_glob_qualifier() {
   _zsh_highlight_main_highlighter_highlight_glob_qualifiers >/dev/null 2>&1
 }
 
+_zsh_highlight_main__is_valid_bare_glob_qualifier_body() {
+  [[ $1 == [0-9]## ]] && return 1
+  return 0
+}
+
 _zsh_highlight_main__is_literal_function_name() {
   [[ $1 == [A-Za-z_][A-Za-z0-9_-]# ]]
 }
@@ -2644,7 +2649,22 @@ _zsh_highlight_main_highlighter_highlight_parameter_expansion()
         (( i++ ))
         continue
         ;;
-      '*' | '@' | '!' | '#' | '%' | '/' | '+' | '=' | '-' | '?')
+      '+' | '=')
+        if [[ $parser_state == subject ]] && (( i == subject_start )); then
+          highlights+=($(( start_pos + i - 1 )) $(( start_pos + i )) parameter-expansion-flag)
+          (( i++ ))
+          subject_start=$i
+          substring_operator=0
+          continue
+        elif [[ $parser_state == subject ]]; then
+          highlights+=($(( start_pos + i - 1 )) $(( start_pos + i )) parameter-expansion-operator)
+          parser_state=rhs
+          substring_operator=0
+          (( i++ ))
+          continue
+        fi
+        ;;
+      '*' | '@' | '!' | '#' | '%' | '/' | '-' | '?')
         if [[ $parser_state == subject ]]; then
           if (( i == subject_start )) && [[ $arg[$i] == [*@!?-] ]]; then
             local next_subject_char=${arg[$(( i + 1 ))]:-}
@@ -2699,7 +2719,7 @@ _zsh_highlight_main_highlighter_highlight_parameter_expansion()
           continue
         fi
         ;;
-      '^' | '~' | '=' | '+')
+      '^' | '~')
         if [[ $parser_state == subject ]] && (( i == subject_start )); then
           operator_len=1
           if [[ $arg[$i] == '^' && $arg[$(( i + 1 ))] == '^' ]]; then
@@ -2827,7 +2847,12 @@ _zsh_highlight_main_highlighter_highlight_glob_qualifiers()
         $(( start_pos + block_starts[i] )) $(( start_pos + block_starts[i] + 2 )) glob-qualifier-flag
         $(( start_pos + block_ends[i] - 1 )) $(( start_pos + block_ends[i] )) glob-qualifier-delimiter
       )
-    elif (( block_delimited_bodies[i] )) || [[ $body != *'|'* && $body != *'('* && $body != *[[:blank:]]* ]]; then
+    elif (( block_delimited_bodies[i] )) ||
+         (
+           [[ $body != *'|'* && $body != *'('* && $body != *[[:blank:]]* ]] &&
+           _zsh_highlight_main__is_valid_bare_glob_qualifier_body "$body"
+         )
+    then
       reply+=(
         $(( start_pos + block_starts[i] - 1 )) $(( start_pos + block_ends[i] )) glob-qualifier
         $(( start_pos + block_starts[i] - 1 )) $(( start_pos + block_starts[i] )) glob-qualifier-delimiter
