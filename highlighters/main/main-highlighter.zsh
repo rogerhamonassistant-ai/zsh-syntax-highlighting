@@ -315,6 +315,12 @@ _zsh_highlight_main__is_function_name() {
       return 1
       ;;
   esac
+  if zmodload -e zsh/parameter; then
+    (( $reswords[(Ie)$1] )) && return 1
+  else
+    _zsh_highlight_main__type "$1" 0
+    [[ $REPLY == reserved ]] && return 1
+  fi
   return 0
 }
 
@@ -395,7 +401,7 @@ _zsh_highlight_main__skip_glob_qualifier_delimited_argument() {
   local qualifier=$arg[$i] block_delim block_end_delim next_char
 
   (( i < $#arg )) || return 1
-  if [[ $qualifier == [oO] ]] && (( i < $#arg )) && [[ $arg[$(( i + 1 ))] == e ]]; then
+  if [[ $qualifier == [oO] ]] && (( i < $#arg )) && [[ $arg[$(( i + 1 ))] == [e+] ]]; then
     qualifier+=$arg[$(( i + 1 ))]
     qualifier_len=2
   fi
@@ -403,7 +409,7 @@ _zsh_highlight_main__skip_glob_qualifier_delimited_argument() {
   (( i + qualifier_len <= $#arg )) || return 1
   next_char=$arg[$(( i + qualifier_len ))]
   case "$qualifier" in
-    ([ePug]|[oO]e)
+    ([ePug+]|[oO][e+])
       [[ $next_char != ')' ]] || return 1
       ;;
     (f)
@@ -2762,14 +2768,14 @@ _zsh_highlight_main_highlighter_highlight_glob_qualifiers()
               done
               (( i = j ))
               ;;
-            [ePugf])
+            [ePugf+])
               if _zsh_highlight_main__skip_glob_qualifier_delimited_argument $i; then
                 block_has_delimited_body=1
                 (( i = REPLY ))
               fi
               ;;
             [oO])
-              if [[ ${arg[$(( i + 1 ))]:-} == e ]] &&
+              if [[ ${arg[$(( i + 1 ))]:-} == [e+] ]] &&
                  _zsh_highlight_main__skip_glob_qualifier_delimited_argument $i
               then
                 block_has_delimited_body=1
