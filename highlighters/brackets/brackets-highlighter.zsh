@@ -104,6 +104,15 @@ _zsh_highlight_brackets_is_arithmetic_expansion()
         (( pos++ ))
         continue
         ;;
+      (dollar-single:"\\")
+        (( pos += 2 ))
+        continue
+        ;;
+      (dollar-single:"'")
+        quote_mode=''
+        (( pos++ ))
+        continue
+        ;;
       (double:"\\")
         (( pos += 2 ))
         continue
@@ -136,6 +145,13 @@ _zsh_highlight_brackets_is_arithmetic_expansion()
     case $char in
       "\\")
         if [[ ${BUFFER[$(( pos + 1 ))]:-} == ')' ]]; then
+          (( pos += 2 ))
+          continue
+        fi
+        ;;
+      '$')
+        if [[ ${BUFFER[$(( pos + 1 ))]:-} == "'" ]]; then
+          quote_mode=dollar-single
           (( pos += 2 ))
           continue
         fi
