@@ -17,8 +17,12 @@ The current fork carries three substantive changes beyond upstream:
 - quoted-region and backtick-handling refinements in the `brackets`
   highlighter and its regression corpus
 
-Landed Fork Changes
--------------------
+Substantive Fork Changes
+------------------------
+
+This section summarizes the durable fork-specific changes currently carried
+beyond upstream. It is intentionally content-focused and does not attempt to
+enumerate every direct documentation-only maintenance commit.
 
 ### PR #1: build: support optional local leak-check hook
 
