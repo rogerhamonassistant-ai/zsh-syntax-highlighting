@@ -2018,9 +2018,10 @@ _zsh_highlight_main_highlighter_highlight_list()
                         fi
                         continue
                         elif (( ! in_param )) &&
+                             _zsh_highlight_main__history_expansion_prefix_length "$arg" &&
+                             (( REPLY == 2 )) &&
                              [[ $arg == "${histchars[1]}${histchars[1]}"?* ]]; then
-                          _zsh_highlight_main_add_region_highlight $start_pos $(( start_pos + 1 )) history-expansion
-                          style=default
+                          style=history-expansion
                         elif (( ! in_param )) &&
                              [[ $arg[0,1] = $histchars[0,1] ]] && (( $#arg[0,2] == 2 )); then
                           style=history-expansion
