@@ -45,6 +45,11 @@ test:
 			: $$(( result |= $$? )); \
 		fi \
 	done; \
+	if [ -f tests/test-render-tool.zsh ]; then \
+		echo "Running test render-tool"; \
+		env -i QUIET=$$QUIET $${TERM:+"TERM=$$TERM"} $(ZSH) -f tests/test-render-tool.zsh; \
+		: $$(( result |= $$? )); \
+	fi; \
 	hook_path=`git rev-parse --git-path local-tests/test-no-private-details.zsh 2>/dev/null || true`; \
 	if [ -n "$$hook_path" ] && [ -f "$$hook_path" ]; then \
 		$(ZSH) -f "$$hook_path" 1>&2; \

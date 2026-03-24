@@ -47,20 +47,20 @@ _render_parse_color_code() {
   local prefix
 
   if [[ $channel == fg ]]; then
-    (( ${+_render_named_fg[$value]} )) && { REPLY=$_render_named_fg[$value]; return 0; }
+    (( ${+_render_named_fg[$value]} )) && { REPLY=${_render_named_fg[$value]}; return 0; }
     prefix=38
   else
-    (( ${+_render_named_bg[$value]} )) && { REPLY=$_render_named_bg[$value]; return 0; }
+    (( ${+_render_named_bg[$value]} )) && { REPLY=${_render_named_bg[$value]}; return 0; }
     prefix=48
   fi
 
-  if [[ $value == [0-9]## ]]; then
+  if [[ $value =~ '^[0-9]+$' ]]; then
     (( value >= 0 && value <= 255 )) || return 1
     REPLY="$prefix;5;$value"
     return 0
   fi
 
-  if [[ $value == \#[0-9a-f]##([0-9a-f]) ]]; then
+  if [[ $value =~ '^#[0-9a-f]{6}$' ]]; then
     local hex=${value#\#}
     local -i red=$(( 16#${hex[1,2]} ))
     local -i green=$(( 16#${hex[3,4]} ))
@@ -212,7 +212,7 @@ while (( $# > 0 )); do
 done
 
 if (( $# > 0 )); then
-  [[ -z $file_arg ]] || _render_die 'only one input file is supported' 2
+  [[ -z $file_arg && $# -eq 1 ]] || _render_die 'only one input file is supported' 2
   file_arg=$1
   shift
 fi
