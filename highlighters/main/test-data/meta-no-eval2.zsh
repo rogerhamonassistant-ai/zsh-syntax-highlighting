@@ -31,10 +31,14 @@
 # We aren't testing how this is highlighted; we're testing that it's not
 # evaluated.  If it gets evaluated, the test suite will die.
 BUFFER=$': /(e*exit 42*)'
+unsorted=1
 
 expected_region_highlight=(
   '1 1 builtin' # :
   '3 15 default' # /(e*exit 42*)
+  '4 15 glob-qualifier' # (e*exit 42*)
+  '4 4 glob-qualifier-delimiter' # (
   '6 6 globbing' # *
   '14 14 globbing' # *
+  '15 15 glob-qualifier-delimiter' # )
 )

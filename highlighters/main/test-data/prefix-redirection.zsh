@@ -35,7 +35,7 @@ expected_region_highlight=(
   "7  7  redirection" # >
   "8  11 path"       # /tmp
   "13 19 precommand" # command
-  "21 24 builtin"    # echo
+  "21 24 command"    # echo
   "26 26 redirection" # >
   "27 30 path"       # /tmp
   "32 34 default"    # foo

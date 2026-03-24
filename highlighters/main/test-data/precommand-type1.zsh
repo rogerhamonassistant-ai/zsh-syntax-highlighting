@@ -53,9 +53,9 @@ expected_region_highlight=(
 
   '25 31 precommand' # builtin
   '33 39 precommand' # command
-  '41 44 command "issue #608"' # test
+  '41 44 command' # test
   '47 47 commandseparator' # ;
 
   '49 52 precommand' # nice
-  '54 57 command "issue #608"' # test
+  '54 57 command' # test
 )

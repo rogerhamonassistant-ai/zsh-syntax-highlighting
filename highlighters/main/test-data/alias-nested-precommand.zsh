@@ -37,7 +37,7 @@ expected_region_highlight=(
   '1 1 alias' # a
   '3 4 single-hyphen-option' # -u
   '6 12 default' # phy1729
-  '14 17 builtin' # echo
+  '14 17 command' # echo
   '18 18 commandseparator' # ;
   '20 20 builtin' # :
 )
