@@ -45,6 +45,11 @@ test:
 			: $$(( result |= $$? )); \
 		fi \
 	done; \
+	hook_path=`git rev-parse --git-path local-tests/test-no-private-details.zsh 2>/dev/null || true`; \
+	if [ -n "$$hook_path" ] && [ -f "$$hook_path" ]; then \
+		$(ZSH) -f "$$hook_path" 1>&2; \
+		: $$(( result |= $$? )); \
+	fi; \
 	exit $$result
 
 quiet-test:
