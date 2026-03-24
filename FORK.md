@@ -14,10 +14,10 @@ Current Baseline
 - Upstream base SHA for this fork delta: `1d85c692615a25fe2293bdd44b34c217d5d2bf04`
 - Fork repository: `rogerhamonassistant-ai/zsh-syntax-highlighting`
 - Fork branch: `master`
-- Fork current SHA: `e5976e87cc41eaa219f7f59fd03d167a8d108a7c`
-- Current fork delta: 3 merged fork-only commits ahead of upstream `master`
+- Fork current SHA: `d06c2d250c1dc8d0863aa59849bfc82df1b4d995`
+- Current fork delta: 4 fork-only commits ahead of upstream `master`
 
-Merged Fork Changes
+Landed Fork Changes
 -------------------
 
 ### PR #1: build: support optional local leak-check hook
@@ -65,6 +65,18 @@ Merged Fork Changes
   - this was also a long review-driven patch train and was intentionally consolidated by squash merge
   - the merge commit message is the durable high-level summary of the full review series
 
+### Docs: record fork-specific changes
+
+- Commit: `d06c2d250c1dc8d0863aa59849bfc82df1b4d995`
+- Scope: `README.md`, `FORK.md`
+- Summary:
+  - adds the root `FORK.md` document for fork-specific maintenance notes
+  - adds the thin `Fork` pointer section in `README.md`
+  - records the initial merged fork delta in one place
+- Notes:
+  - this change landed directly on `master`
+  - follow-up documentation changes should use PR flow instead of direct pushes
+
 Files Touched In The Fork
 -------------------------
 
@@ -93,9 +105,11 @@ When fork-only changes land on `master`, update this file immediately:
    - concise scope and behavior summary
 4. Update the touched-areas summary if a new subsystem starts carrying fork-only changes.
 5. Keep the `README.md` `Fork` section brief and in sync with the high-level summary here.
+6. Prefer a PR-based workflow for future fork-maintenance changes; direct pushes to `master` should be exceptional and documented here if they happen.
 
 Conventions:
 
 - Record merged squash commits, not intermediate review commits.
+- Prefer PR-based changes going forward; if something lands directly on `master`, record it explicitly as a direct-landing exception.
 - Prefer behavior-level summaries over raw commit inventories.
 - If the fork returns to upstream parity, keep `FORK.md` and replace the merged-change list with a short note that the fork currently carries no fork-only delta.
