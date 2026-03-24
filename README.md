@@ -40,8 +40,7 @@ This repository is a maintained fork of
 It currently carries an optional local leak-check build hook plus fork-specific
 refinements in the `main` and `brackets` highlighters.
 
-For the detailed fork delta, merged fork-only commits, and maintenance notes,
-see [FORK.md](FORK.md).
+For the current fork-specific content summary, see [FORK.md](FORK.md).
 
 
 How to install
