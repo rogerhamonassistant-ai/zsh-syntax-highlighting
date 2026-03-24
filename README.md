@@ -32,6 +32,17 @@ Before: [![Screenshot #4.1](images/before4-smaller.png)](images/before4-smaller.
 After:&nbsp; [![Screenshot #4.2](images/after4-smaller.png)](images/after4-smaller.png)
 
 
+Fork
+----
+
+This repository is a maintained fork of
+[`zsh-users/zsh-syntax-highlighting`](https://github.com/zsh-users/zsh-syntax-highlighting).
+It currently carries an optional local leak-check build hook plus fork-specific
+refinements in the `main` and `brackets` highlighters.
+
+For the detailed fork delta, merged fork-only commits, and maintenance notes,
+see [FORK.md](FORK.md).
+
 
 How to install
 --------------
