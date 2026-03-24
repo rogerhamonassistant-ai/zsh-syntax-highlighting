@@ -438,8 +438,97 @@ _zsh_highlight_main__forms_complete_glob_qualifier() {
   _zsh_highlight_main_highlighter_highlight_glob_qualifiers >/dev/null 2>&1
 }
 
-_zsh_highlight_main__is_valid_bare_glob_qualifier_body() {
-  [[ $1 == [0-9]## ]] && return 1
+_zsh_highlight_main__is_valid_glob_qualifier_body() {
+  local arg=$1
+  integer i=1 j
+
+  [[ -n $arg ]] || return 1
+
+  while (( i <= $#arg )); do
+    case "$arg[$i]" in
+      [ePugf+])
+        _zsh_highlight_main__skip_glob_qualifier_delimited_argument $i || return 1
+        (( i = REPLY + 1 ))
+        continue
+        ;;
+      [oO])
+        if [[ ${arg[$(( i + 1 ))]:-} == [e+] ]]; then
+          _zsh_highlight_main__skip_glob_qualifier_delimited_argument $i || return 1
+          (( i = REPLY + 1 ))
+          continue
+        elif [[ ${arg[$(( i + 1 ))]:-} == [nNamlcdL+] ]]; then
+          (( i += 2 ))
+          continue
+        fi
+        return 1
+        ;;
+      [NUDGFMTn^~./@=%*\-])
+        (( i++ ))
+        continue
+        ;;
+      [acm])
+        j=$i
+        [[ ${arg[$(( j + 1 ))]:-} == [Mwhmsd] ]] && (( j++ ))
+        [[ ${arg[$(( j + 1 ))]:-} == [+-] ]] && (( j++ ))
+        [[ ${arg[$(( j + 1 ))]:-} == [0-9] ]] || return 1
+        while [[ ${arg[$(( j + 1 ))]:-} == [0-9] ]]; do
+          (( j++ ))
+        done
+        (( i = j + 1 ))
+        continue
+        ;;
+      l)
+        j=$i
+        [[ ${arg[$(( j + 1 ))]:-} == [+-] ]] && (( j++ ))
+        [[ ${arg[$(( j + 1 ))]:-} == [0-9] ]] || return 1
+        while [[ ${arg[$(( j + 1 ))]:-} == [0-9] ]]; do
+          (( j++ ))
+        done
+        (( i = j + 1 ))
+        continue
+        ;;
+      L)
+        j=$i
+        [[ ${arg[$(( j + 1 ))]:-} == [kKmMpPgGtT] ]] && (( j++ ))
+        [[ ${arg[$(( j + 1 ))]:-} == [+-] ]] && (( j++ ))
+        [[ ${arg[$(( j + 1 ))]:-} == [0-9] ]] || return 1
+        while [[ ${arg[$(( j + 1 ))]:-} == [0-9] ]]; do
+          (( j++ ))
+        done
+        (( i = j + 1 ))
+        continue
+        ;;
+      Y)
+        j=$i
+        [[ ${arg[$(( j + 1 ))]:-} == [0-9] ]] || return 1
+        while [[ ${arg[$(( j + 1 ))]:-} == [0-9] ]]; do
+          (( j++ ))
+        done
+        (( i = j + 1 ))
+        continue
+        ;;
+      '[')
+        j=$(( i + 1 ))
+        while (( j <= $#arg )) && [[ $arg[$j] != ']' ]]; do
+          (( j++ ))
+        done
+        (( j <= $#arg )) || return 1
+        (( i = j + 1 ))
+        continue
+        ;;
+      ':')
+        return 0
+        ;;
+      ',')
+        (( i++ ))
+        continue
+        ;;
+      *)
+        return 1
+        ;;
+    esac
+  done
+
   return 0
 }
 
@@ -2565,6 +2654,17 @@ _zsh_highlight_main_highlighter_highlight_parameter_expansion()
             continue
           fi
         fi
+        if [[ $parser_state == subject ]] &&
+           (( i > subject_start )) &&
+           [[ $arg[$i] == '$' ]] &&
+           [[ ${arg[$(( i + 1 ))]:-} == [\{\(] ]] &&
+           [[ ${arg[$(( i - 1 ))]:-} != [[:blank:]] ]]
+        then
+          invalid_special_parameter=1
+          parser_state=invalid
+          (( i++ ))
+          continue
+        fi
         saved_reply=($highlights)
         if _zsh_highlight_main_highlighter_highlight_nested_construct $i 0 $quote_context; then
           (( i = REPLY ))
@@ -2841,6 +2941,7 @@ _zsh_highlight_main_highlighter_highlight_glob_qualifiers()
     body=$arg[$(( block_starts[i] + 1 )),$(( block_ends[i] - 1 ))]
     if [[ $body == '#q'* ]]; then
       [[ ${zsyh_user_options[extendedglob]:-off} == on ]] || return 1
+      _zsh_highlight_main__is_valid_glob_qualifier_body "${body#\#q}" || return 1
       reply+=(
         $(( start_pos + block_starts[i] - 1 )) $(( start_pos + block_ends[i] )) glob-qualifier
         $(( start_pos + block_starts[i] - 1 )) $(( start_pos + block_starts[i] )) glob-qualifier-delimiter
@@ -2850,7 +2951,7 @@ _zsh_highlight_main_highlighter_highlight_glob_qualifiers()
     elif (( block_delimited_bodies[i] )) ||
          (
            [[ $body != *'|'* && $body != *'('* && $body != *[[:blank:]]* ]] &&
-           _zsh_highlight_main__is_valid_bare_glob_qualifier_body "$body"
+           _zsh_highlight_main__is_valid_glob_qualifier_body "$body"
          )
     then
       reply+=(
