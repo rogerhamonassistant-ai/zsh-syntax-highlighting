@@ -617,8 +617,6 @@ _zsh_highlight_highlighter_brackets_paint()
       if (( bracket_color_size )); then
         _zsh_highlight_add_highlight $((pos - 1)) $pos bracket-level-$(( (literal_levelpos[$pos] - 1) % bracket_color_size + 1 ))
       fi
-    else
-      _zsh_highlight_add_highlight $((pos - 1)) $pos bracket-error
     fi
   done
 
