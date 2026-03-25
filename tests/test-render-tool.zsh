@@ -66,6 +66,28 @@ typeset -gr stdout_file=$temp_dir/stdout.txt
 typeset -gr stderr_file=$temp_dir/stderr.txt
 typeset -g rendered_output render_error
 integer exit_code=0
+integer render_exit=0
+
+_run_render() {
+  local input_file=$1
+  shift
+  local -a shell_opts=()
+
+  while (( $# > 0 )); do
+    shell_opts+=( -o "$1" )
+    shift
+  done
+
+  rendered_output=''
+  render_error=''
+  if zsh "${shell_opts[@]}" "$tool_script" "$input_file" >| "$stdout_file" 2>| "$stderr_file"; then
+    render_exit=0
+  else
+    render_exit=$?
+  fi
+  rendered_output=$(<"$stdout_file")
+  render_error=$(<"$stderr_file")
+}
 
 if zsh "$tool_script" -- "$sample_file" >| "$stdout_file" 2>| "$stderr_file"; then
   rendered_output=$(<"$stdout_file")
@@ -105,6 +127,25 @@ _assert_sgr 'bg palette color parses' 'bg=123' '48;5;123'
 _assert_sgr 'fg hex color parses' 'fg=#aabbcc' '38;2;170;187;204'
 _assert_sgr 'bg hex color parses' 'bg=#aabbcc' '48;2;170;187;204'
 _assert_sgr 'named colors remain supported' 'fg=blue' '34'
+
+typeset -gr comment_file=$temp_dir/comment.zsh
+typeset -gr posix_file=$temp_dir/posix.zsh
+print -r -- 'foo () # note' >| "$comment_file"
+print -r -- 'command zstyle' >| "$posix_file"
+
+_run_render "$comment_file"
+_assert_contains 'comment text stays non-comment without interactivecomments' "$rendered_output" $'\033[31;1m#\033[0m note'
+
+_run_render "$comment_file" interactivecomments
+_assert_eq 'interactivecomments render exits cleanly' "$render_exit" '0'
+_assert_contains 'interactivecomments colors the full comment body' "$rendered_output" $'\033[30;1m# note\033[0m'
+
+_run_render "$posix_file"
+_assert_contains 'posixbuiltins-off keeps command zstyle unresolved' "$rendered_output" $'\033[31;1mzstyle\033[0m'
+
+_run_render "$posix_file" posixbuiltins
+_assert_eq 'posixbuiltins render exits cleanly' "$render_exit" '0'
+_assert_contains 'posixbuiltins colors command zstyle as a builtin' "$rendered_output" $'\033[32mzstyle\033[0m'
 
 print -r -- "1..$test_count"
 exit "$failure_count"

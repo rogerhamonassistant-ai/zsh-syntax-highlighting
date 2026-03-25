@@ -1,7 +1,26 @@
 #!/usr/bin/env zsh
 
+typeset -gA _render_invocation_options
+_render_invocation_options=("${(kv)options[@]}")
+
 emulate -LR zsh
 setopt pipe_fail no_unset
+
+typeset -ga _render_syntax_option_names=(
+  aliasfuncdef autocd bareglobqual equals extendedglob globassign ignorebraces
+  ignoreclosebraces interactivecomments multifuncdef multios pathdirs posixbuiltins
+  rcquotes shwordsplit
+)
+
+typeset -g _render_option_name
+for _render_option_name in "${_render_syntax_option_names[@]}"; do
+  if [[ ${_render_invocation_options[$_render_option_name]-off} == on ]]; then
+    setopt "$_render_option_name"
+  else
+    unsetopt "$_render_option_name"
+  fi
+done
+unset _render_option_name
 
 zmodload zsh/zle || {
   print -u2 -- 'render-with-zsh-syntax-highlighting: failed to load zsh/zle'
