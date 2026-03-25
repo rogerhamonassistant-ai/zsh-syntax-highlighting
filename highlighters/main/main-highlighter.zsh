@@ -1885,6 +1885,12 @@ _zsh_highlight_main_highlighter_highlight_list()
                         style=reserved-word
                         # Match braces and handle special cases.
                         case $arg in
+                          ('()')
+                            if [[ $last_arg == for ]] ||
+                               [[ $last_arg == repeat ]]; then
+                              style=unknown-token
+                            fi
+                            ;;
                           (time|nocorrect)
                             next_word=${next_word//:regular:/}
                             next_word+=':start:'
@@ -2049,6 +2055,7 @@ _zsh_highlight_main_highlighter_highlight_list()
                              [[ $arg == '()' ]]; then
                           # anonymous function
                           style=reserved-word
+                          next_word=':start::start_of_pipeline:'
                         elif (( ! in_param )) &&
                              ! $saw_assignment &&
                              [[ $arg == $'\x28' ]]; then
@@ -2087,6 +2094,17 @@ _zsh_highlight_main_highlighter_highlight_list()
     elif _zsh_highlight_main__is_global_alias "$arg"; then # $arg is a global alias that isn't in command position
       style=global-alias
     else # $arg is a non-command word
+      if [[ $arg == '()' ]] &&
+         (
+           [[ $last_arg == for ]] ||
+           [[ $last_arg == repeat ]]
+         )
+      then
+        style=unknown-token
+        next_word=':start::start_of_pipeline:'
+        _zsh_highlight_main_add_region_highlight $start_pos $end_pos $style
+        continue
+      fi
       case $arg in
         ('=='|'!=')
                   if [[ $braces_stack == *T* ]]; then
