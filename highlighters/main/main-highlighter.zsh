@@ -2054,7 +2054,11 @@ _zsh_highlight_main_highlighter_highlight_list()
                         elif (( ! in_param )) &&
                              [[ $arg == '()' ]]; then
                           # anonymous function
-                          style=reserved-word
+                          if [[ $last_arg == if ]]; then
+                            style=unknown-token
+                          else
+                            style=reserved-word
+                          fi
                           next_word=':start::start_of_pipeline:'
                         elif (( ! in_param )) &&
                              ! $saw_assignment &&
