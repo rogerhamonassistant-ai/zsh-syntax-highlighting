@@ -254,7 +254,6 @@ _zsh_highlight()
 
   {
     local cache_place
-    local -a region_highlight_copy
 
     # Select which highlighters in ZSH_HIGHLIGHT_HIGHLIGHTERS need to be invoked.
     local highlighter; for highlighter in $ZSH_HIGHLIGHT_HIGHLIGHTERS; do
@@ -278,23 +277,12 @@ _zsh_highlight()
           _zsh_highlight_perf_count "driver.highlighter_paint_calls.$highlighter"
         }
 
-        # save a copy, and cleanup region_highlight
-        (( _zsh_highlight_perf_trace_enabled )) && {
-          _zsh_highlight_perf_count 'driver.region_highlight_copy_calls'
-          _zsh_highlight_perf_count 'driver.region_highlight_copy_regions' $#region_highlight
-        }
-        region_highlight_copy=("${region_highlight[@]}")
-        region_highlight=()
-
-        # Execute highlighter and save result
-        {
+        # Execute the highlighter in an isolated local sink and cache the result.
+        () {
+          local -a region_highlight=()
           "_zsh_highlight_highlighter_${highlighter}_paint"
-        } always {
           : ${(AP)cache_place::="${region_highlight[@]}"}
         }
-
-        # Restore saved region_highlight
-        region_highlight=("${region_highlight_copy[@]}")
 
       fi
 
