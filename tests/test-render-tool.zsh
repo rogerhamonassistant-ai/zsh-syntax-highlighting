@@ -73,6 +73,7 @@ print -r -- 'echo goodbye' >| "$other_file"
 
 typeset -gr stdout_file=$temp_dir/stdout.txt
 typeset -gr stderr_file=$temp_dir/stderr.txt
+typeset -gr stripped_file=$temp_dir/stripped.txt
 typeset -g rendered_output render_error
 integer exit_code=0
 integer render_exit=0
@@ -183,6 +184,7 @@ typeset -gr comment_file=$temp_dir/comment.zsh
 typeset -gr posix_file=$temp_dir/posix.zsh
 typeset -gr slurp_simple_file=$temp_dir/slurp-simple.zsh
 typeset -gr slurp_multiline_file=$temp_dir/slurp-multiline.zsh
+typeset -gr slurp_newline_file=$temp_dir/slurp-newline.zsh
 print -r -- 'foo () # note' >| "$comment_file"
 print -r -- 'command zstyle' >| "$posix_file"
 print -r -- 'echo hello' >| "$slurp_simple_file"
@@ -201,6 +203,10 @@ esac
 cat <<'USAGE'
 $(not-run)
 USAGE
+EOF
+cat >| "$slurp_newline_file" <<'EOF'
+echo hello
+print world
 EOF
 
 _run_render "$comment_file"
@@ -229,10 +235,21 @@ _assert_eq 'slurp matches default rendering on a simple single-line file' "$slur
 
 _run_render_with_helper_args "$slurp_multiline_file" --slurp --highlighters main,brackets
 _assert_eq 'slurp multiline render exits cleanly' "$render_exit" '0'
-slurp_lines=("${(@f)rendered_output}")
+slurp_lines=("${(@f)$(<"$stdout_file")}")
 _assert_eq 'slurp preserves multiline line count' "${#slurp_lines}" '14'
 _assert_not_contains 'slurp keeps associative-array opener from rendering as bracket-error' "${slurp_lines[1]}" $'\033[31;1m(\033[0m'
 _assert_not_contains 'slurp keeps function opener brace from rendering as bracket-error' "${slurp_lines[4]}" $'\033[31;1m{\033[0m'
+
+if zsh "$tool_script" --slurp "$slurp_newline_file" >| "$stdout_file" 2>| "$stderr_file"; then
+  perl -pe 's/\e\[[0-9;]*m//g' "$stdout_file" >| "$stripped_file"
+  if cmp -s "$slurp_newline_file" "$stripped_file"; then
+    _ok 'slurp preserves source text without adding a trailing newline'
+  else
+    _not_ok 'slurp preserves source text without adding a trailing newline' 'stripped slurp output differs from source file'
+  fi
+else
+  _not_ok 'slurp preserves source text without adding a trailing newline' "unexpected failure: ${(qqq)$(<"$stderr_file")}"
+fi
 
 print -r -- "1..$test_count"
 exit "$failure_count"

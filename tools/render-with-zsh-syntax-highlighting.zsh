@@ -227,6 +227,12 @@ _render_render_slurped_buffer() {
   _zsh_highlight
 
   file_lines=("${(@f)file_content}")
+  if (( $#file_lines )) &&
+     [[ $file_content[-1] == $'\n' ]] &&
+     [[ -z ${file_lines[-1]} ]]
+  then
+    file_lines=("${(@)file_lines[1,-2]}")
+  fi
   for (( idx = 1; idx <= $#file_lines; ++idx )); do
     _render_line "${file_lines[idx]}" "$line_start_offset"
     (( line_start_offset += ${#file_lines[idx]} + 1 ))
