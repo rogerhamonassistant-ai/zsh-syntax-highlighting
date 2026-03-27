@@ -2526,7 +2526,10 @@ _zsh_highlight_main__find_command_substitution_end()
     prev_char=${arg[$(( pos - 1 ))]:-}
 
     if (( in_comment )); then
-      [[ $char == $'\n' ]] && in_comment=0
+      if [[ $char == $'\n' ]]; then
+        in_comment=0
+        (( depth == 1 )) && at_command_start=1
+      fi
       continue
     fi
 
@@ -2673,9 +2676,6 @@ _zsh_highlight_main__find_command_substitution_end()
         (( depth == 1 )) && at_command_start=1
         ;;
       ($'\n')
-        if [[ $case_state == await-in ]]; then
-          case_state=''
-        fi
         (( depth == 1 )) && at_command_start=1
         ;;
       ('|'|'&')
