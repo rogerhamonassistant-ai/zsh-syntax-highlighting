@@ -2412,7 +2412,7 @@ _zsh_highlight_main__find_command_substitution_end()
   integer pos=$1 depth=1
   integer in_comment=0 at_command_start=1 case_pattern_paren_depth=0 case_pattern_depth=0
   integer heredoc_descriptor_end=0 heredoc_descriptor_strip_tabs=0
-  local quote_mode='' case_state='' word_fragment=''
+  local quote_mode='' backtick_resume_mode='' case_state='' word_fragment=''
   local char next_char prev_char
   local heredoc_descriptor_value=''
   local -a pending_heredoc_delimiters pending_heredoc_strip_tabs
@@ -2642,7 +2642,8 @@ _zsh_highlight_main__find_command_substitution_end()
         continue
         ;;
       (backtick:'`')
-        quote_mode=''
+        quote_mode=$backtick_resume_mode
+        backtick_resume_mode=''
         continue
         ;;
       (dollar-single:'\\')
@@ -2666,6 +2667,7 @@ _zsh_highlight_main__find_command_substitution_end()
         quote_mode=dollar-single
         (( pos++ ))
       elif [[ $quote_mode == double && $char == '`' ]]; then
+        backtick_resume_mode=double
         quote_mode=backtick
       fi
       continue
@@ -2698,6 +2700,7 @@ _zsh_highlight_main__find_command_substitution_end()
         quote_mode=double
         ;;
       ('`')
+        backtick_resume_mode=''
         quote_mode=backtick
         ;;
       ('\\')
