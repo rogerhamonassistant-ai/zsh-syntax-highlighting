@@ -94,6 +94,14 @@ _zsh_highlight_main__perf_count_tail_slice() {
   _zsh_highlight_perf_count 'main.nested_tail_copy_bytes' $(( $#arg - start_index + 1 ))
 }
 
+_zsh_highlight_main__alias_stack_contains() {
+  local alias_name=$1 active_alias_name
+  for active_alias_name in "${in_alias[@]}"; do
+    [[ $active_alias_name == "$alias_name" ]] && return 0
+  done
+  return 1
+}
+
 # Helper to deal with tokens crossing line boundaries.
 _zsh_highlight_main_add_region_highlight() {
   integer start=$1 end=$2
@@ -786,8 +794,8 @@ _zsh_highlight_main__history_expansion_prefix_length() {
 }
 
 _zsh_highlight_main__raw_token_length() {
-  local raw=$1 token=$2
-  integer i=1 j=1 raw_len=0
+  local raw=$1 token=$3
+  integer i=$2 j=1 raw_len=0
 
   while (( i <= $#raw )) && (( j <= $#token )); do
     if [[ $raw[$i] == '\' && $raw[$(( i + 1 ))] == $'\n' ]]; then
@@ -1031,15 +1039,13 @@ _zsh_highlight_main_highlighter_highlight_list()
   # param_style is analogous for parameter expansions
   local alias_style param_style last_arg arg buf=$4 highlight_glob=true saw_assignment=false style
   local in_array_assignment=false # true between 'a=(' and the matching ')'
-  # in_alias is an array of integers with each element equal to the number
-  #     of shifts needed until arg=args[1] pops an arg from the next level up
-  #     alias or from BUFFER.
-  # in_param is analogous for parameter expansions
-  integer in_param=0 len=$#buf
+  integer len=$#buf
+  integer in_param=0
   integer trace_enabled=$_zsh_highlight_perf_trace_enabled
   local -a in_alias match mbegin mend list_highlights
-  # seen_alias is a map of aliases already seen to avoid loops like alias a=b b=a
-  local -A seen_alias
+  local -a args frame_kind frame_alias_name
+  local -a frame_start frame_end frame_pos
+  integer frame_depth=0 arg_index raw_cursor=1
   # Pattern for parameter names
   readonly parameter_name_pattern='([A-Za-z_][A-Za-z0-9_]*|[0-9]+)'
   list_highlights=()
@@ -1109,14 +1115,20 @@ _zsh_highlight_main_highlighter_highlight_list()
   local this_word next_word=':start::start_of_pipeline:'
   integer in_redirection
   # Processing buffer
-  local proc_buf="$buf"
-  local -a args
   if [[ $zsyh_user_options[interactivecomments] == on ]]; then
     args=(${(zZ+c+)buf})
   else
     args=(${(z)buf})
   fi
   (( trace_enabled )) && _zsh_highlight_main__perf_count 'main.highlight_list_token_count' $#args
+  if (( $#args )); then
+    frame_depth=1
+    frame_start[1]=1
+    frame_end[1]=$#args
+    frame_pos[1]=1
+    frame_kind[1]=buffer
+    frame_alias_name[1]=''
+  fi
 
   # Special case: $(<*) isn't globbing.
   if [[ $braces_stack == 'S' ]] && (( $+args[3] && ! $+args[4] )) && [[ $args[3] == $'\x29' ]] &&
@@ -1124,47 +1136,49 @@ _zsh_highlight_main_highlighter_highlight_list()
     highlight_glob=false
   fi
 
-  while (( $#args )); do
-    last_arg=$arg
-    arg=$args[1]
-    shift args
-    (( trace_enabled )) && _zsh_highlight_main__perf_count 'main.args_shift_ops'
-    (( trace_enabled )) && _zsh_highlight_main__perf_count 'main.highlight_list_token_iterations'
-    if [[ ${zsyh_user_options[bareglobqual]:-on} == on ]] &&
-       (( $#args )) &&
-       [[ $args[1] == $'\x29' ]] &&
-       _zsh_highlight_main__forms_complete_glob_qualifier "$arg" "$args[1]"
-    then
-      arg+=$args[1]
-      shift args
-      (( trace_enabled )) && _zsh_highlight_main__perf_count 'main.args_shift_ops'
-    fi
-    if (( $#in_alias )); then
-      (( in_alias[1]-- ))
-      # Remove leading 0 entries
-      in_alias=($in_alias[$in_alias[(i)<1->],-1])
-      if (( $#in_alias == 0 )); then
-        seen_alias=()
-        # start_pos and end_pos are of the alias (previous $arg) here
-        _zsh_highlight_main_add_region_highlight $start_pos $end_pos $alias_style
-      else
-        # We can't unset keys that contain special characters (] \ and some others).
-        # More details: https://www.zsh.org/workers/43269
-        (){
-          local alias_name
-          for alias_name in ${(k)seen_alias[(R)<$#in_alias->]}; do
-            seen_alias=("${(@kv)seen_alias[(I)^$alias_name]}")
-          done
-        }
-      fi
-    fi
+  while (( frame_depth > 0 )); do
+    while (( frame_depth > 0 )) && (( frame_pos[$frame_depth] > frame_end[$frame_depth] )); do
+      case ${frame_kind[$frame_depth]} in
+        (alias)
+          in_alias[-1]=()
+          if (( $#in_alias == 0 )); then
+            _zsh_highlight_main_add_region_highlight $start_pos $end_pos $alias_style
+            alias_style=''
+          fi
+          ;;
+      esac
+      (( frame_depth-- ))
+    done
+
+    (( frame_depth > 0 )) || break
     if (( in_param )); then
       (( in_param-- ))
       if (( in_param == 0 )); then
-        # start_pos and end_pos are of the '$foo' word (previous $arg) here
         _zsh_highlight_main_add_region_highlight $start_pos $end_pos $param_style
-        param_style=""
+        param_style=''
       fi
+    fi
+    last_arg=$arg
+    arg_index=${frame_pos[$frame_depth]}
+    arg=${args[arg_index]}
+    (( frame_pos[$frame_depth]++ ))
+    (( trace_enabled )) && _zsh_highlight_main__perf_count 'main.highlight_list_token_iterations'
+    local next_arg=
+    integer peek_depth=$frame_depth peek_index
+    while (( peek_depth > 0 )); do
+      peek_index=${frame_pos[$peek_depth]}
+      if (( peek_index <= frame_end[$peek_depth] )); then
+        next_arg=${args[peek_index]}
+        break
+      fi
+      (( peek_depth-- ))
+    done
+    if [[ ${zsyh_user_options[bareglobqual]:-on} == on ]] &&
+       [[ $next_arg == $'\x29' ]] &&
+       _zsh_highlight_main__forms_complete_glob_qualifier "$arg" "$next_arg"
+    then
+      arg+=$next_arg
+      (( frame_pos[$peek_depth]++ ))
     fi
 
     # Initialize this_word and next_word.
@@ -1192,14 +1206,22 @@ _zsh_highlight_main_highlighter_highlight_list()
     fi
 
     if (( $#in_alias == 0 && in_param == 0 )); then
-      # Compute the new $start_pos and $end_pos, skipping over whitespace in $buf.
-      [[ "$proc_buf" = (#b)(#s)(''([ $'\t']|[\\]$'\n')#)(?|)* ]]
-      # The first, outer parenthesis
-      integer offset="${#match[1]}"
+      integer offset=0
+      while (( raw_cursor <= len )); do
+        if [[ $buf[raw_cursor] == [\ $'\t'] ]]; then
+          (( raw_cursor++ ))
+          (( offset++ ))
+        elif [[ $buf[raw_cursor] == '\' && $buf[$(( raw_cursor + 1 ))] == $'\n' ]]; then
+          (( raw_cursor += 2 ))
+          (( offset += 2 ))
+        else
+          break
+        fi
+      done
       integer raw_token_length=$#arg
       (( start_pos = end_pos + offset ))
-      if [[ $proc_buf == *$'\\\n'* ]]; then
-        _zsh_highlight_main__raw_token_length "${proc_buf[offset + 1,-1]}" "$arg"
+      if [[ $buf[raw_cursor,-1] == *$'\\\n'* ]]; then
+        _zsh_highlight_main__raw_token_length "$buf" "$raw_cursor" "$arg"
         (( REPLY > 0 )) && raw_token_length=$REPLY
       fi
       (( end_pos = start_pos + raw_token_length ))
@@ -1207,28 +1229,8 @@ _zsh_highlight_main_highlighter_highlight_list()
       # The zsh lexer considers ';' and newline to be the same token, so
       # ${(z)} converts all newlines to semicolons. Convert them back here to
       # make later processing simpler.
-      [[ $arg == ';' && ${match[3]} == $'\n' ]] && arg=$'\n'
-
-      # Compute the new $proc_buf. We advance it
-      # (chop off characters from the beginning)
-      # beyond what end_pos points to, by skipping
-      # as many characters as end_pos was advanced.
-      #
-      # end_pos was advanced by $offset (via start_pos)
-      # and by $#arg. Note the `start_pos=$end_pos`
-      # below.
-      #
-      # As for the [,len]. We could use [,len-start_pos+offset]
-      # here, but to make it easier on eyes, we use len and
-      # rely on the fact that Zsh simply handles that. The
-      # length of proc_buf is len-start_pos+offset because
-      # we're chopping it to match current start_pos, so its
-      # length matches the previous value of start_pos.
-      #
-      # Why [,-1] is slower than [,length] isn't clear.
-      proc_buf="${proc_buf[offset + raw_token_length + 1,len]}"
-      (( trace_enabled )) && _zsh_highlight_main__perf_count 'main.proc_buf_rewrites'
-      (( trace_enabled )) && _zsh_highlight_main__perf_count 'main.proc_buf_rewrite_bytes' $#proc_buf
+      [[ $arg == ';' && $buf[raw_cursor] == $'\n' ]] && arg=$'\n'
+      (( raw_cursor += raw_token_length ))
     fi
 
     # Handle the INTERACTIVE_COMMENTS option.
@@ -1249,7 +1251,9 @@ _zsh_highlight_main_highlighter_highlight_list()
     if [[ $this_word == *':start:'* ]] && ! (( in_redirection )); then
       # Expand aliases.
       # An alias is ineligible for expansion while it's being expanded (see #652/#653).
-      _zsh_highlight_main__type "$arg" "$(( ! ${+seen_alias[$arg]} ))"
+      local aliases_allowed_for_arg=1
+      _zsh_highlight_main__alias_stack_contains "$arg" && aliases_allowed_for_arg=0
+      _zsh_highlight_main__type "$arg" "$aliases_allowed_for_arg"
       local res="$REPLY"
       if [[ $res == "alias" ]]; then
         # Mark insane aliases as unknown-token (cf. #263).
@@ -1257,7 +1261,6 @@ _zsh_highlight_main_highlighter_highlight_list()
           _zsh_highlight_main_add_region_highlight $start_pos $end_pos unknown-token
           continue
         fi
-        seen_alias[$arg]=$#in_alias
         _zsh_highlight_main__resolve_alias $arg
         local -a alias_args
         # Elision is desired in case alias x=''
@@ -1266,18 +1269,19 @@ _zsh_highlight_main_highlighter_highlight_list()
         else
           alias_args=(${(z)REPLY})
         fi
-        args=( $alias_args $args )
-        (( trace_enabled )) && _zsh_highlight_main__perf_count 'main.alias_front_prepend_ops'
-        (( trace_enabled )) && _zsh_highlight_main__perf_count 'main.alias_front_prepend_args' $#alias_args
+        args+=( "${alias_args[@]}" )
+        (( frame_depth++ ))
+        frame_start[$frame_depth]=$(( $#args - $#alias_args + 1 ))
+        frame_end[$frame_depth]=$#args
+        frame_pos[$frame_depth]=$(( $#args - $#alias_args + 1 ))
+        frame_kind[$frame_depth]=alias
+        frame_alias_name[$frame_depth]=$arg
+        (( trace_enabled )) && _zsh_highlight_main__perf_count 'main.alias_frame_push_ops'
+        (( trace_enabled )) && _zsh_highlight_main__perf_count 'main.alias_frame_push_args' $#alias_args
         if (( $#in_alias == 0 )); then
           alias_style=alias
-        else
-          # Transfer the count of this arg to the new element about to be appended.
-          (( in_alias[1]-- ))
         fi
-        # Add one because we will in_alias[1]-- on the next loop iteration so
-        # this iteration should be considered in in_alias as well
-        in_alias=( $(($#alias_args + 1)) $in_alias )
+        in_alias+=("$arg")
         (( in_redirection++ )) # Stall this arg
         continue
       else
@@ -1297,7 +1301,7 @@ _zsh_highlight_main_highlighter_highlight_list()
         _zsh_highlight_main_add_region_highlight $start_pos $end_pos redirection
       fi
       continue
-    elif [[ $arg == '{'${~parameter_name_pattern}'}' ]] && _zsh_highlight_main__is_redirection $args[1]; then
+    elif [[ $arg == '{'${~parameter_name_pattern}'}' ]] && _zsh_highlight_main__is_redirection "$next_arg"; then
       # named file descriptor: {foo}>&2
       in_redirection=3
       _zsh_highlight_main_add_region_highlight $start_pos $end_pos named-fd
@@ -1318,9 +1322,19 @@ _zsh_highlight_main_highlighter_highlight_list()
           _zsh_highlight_main_add_region_highlight $start_pos $end_pos comment
           continue
         else
-          (( in_param = $#words ))
+          in_param=$#words
           arg=$words[1]
-          args=( $words[2,-1] $args )
+          if (( $#words > 1 )); then
+            args+=( "${words[@]:1}" )
+            (( frame_depth++ ))
+            frame_start[$frame_depth]=$(( $#args - $#words + 2 ))
+            frame_end[$frame_depth]=$#args
+            frame_pos[$frame_depth]=$(( $#args - $#words + 2 ))
+            frame_kind[$frame_depth]=param
+            frame_alias_name[$frame_depth]=''
+            _zsh_highlight_main__perf_count 'main.param_frame_push_ops'
+            _zsh_highlight_main__perf_count 'main.param_frame_push_args' $(( $#words - 1 ))
+          fi
           _zsh_highlight_main__type "$arg" 0
           res=$REPLY
         fi
@@ -1515,7 +1529,7 @@ _zsh_highlight_main_highlighter_highlight_list()
         _zsh_highlight_main_add_region_highlight $start_pos $end_pos $style
         continue
       fi
-      local next_function_token=${args[1]:-}
+      local next_function_token=$next_arg
       if [[ $this_word == *':function_header:'* ]]; then
         if [[ $arg == $'\n' ]]; then
           style=commandseparator
@@ -1782,14 +1796,6 @@ _zsh_highlight_main_highlighter_highlight_list()
         next_word=':start:'
         highlight_glob=true
         saw_assignment=false
-        (){
-          local alias_name
-          for alias_name in ${(k)seen_alias[(R)<$#in_alias->]}; do
-            # We can't unset keys that contain special characters (] \ and some others).
-            # More details: https://www.zsh.org/workers/43269
-            seen_alias=("${(@kv)seen_alias[(I)^$alias_name]}")
-          done
-        }
         if [[ $arg != '|' && $arg != '|&' ]]; then
           next_word+=':start_of_pipeline:'
         fi
@@ -1818,15 +1824,24 @@ _zsh_highlight_main_highlighter_highlight_list()
         fi
       fi
 
-      local -a function_lookahead
-      function_lookahead=( "${args[@]}" )
-      if [[ ${function_lookahead[1]:-} == ';' ]] && [[ $proc_buf[1] == $'\n' ]]; then
+      local -a function_lookahead=()
+      {
+        local -i look_depth=$frame_depth look_pos min_look_depth=$frame_depth
+        [[ ${frame_kind[$frame_depth]} != buffer ]] && min_look_depth=1
+        while (( look_depth >= min_look_depth )); do
+          for (( look_pos = frame_pos[$look_depth]; look_pos <= frame_end[$look_depth]; ++look_pos )); do
+            function_lookahead+=("${args[look_pos]}")
+          done
+          (( look_depth-- ))
+        done
+      }
+      if [[ ${function_lookahead[1]:-} == ';' ]] && [[ ${buf[raw_cursor]:-} == $'\n' ]]; then
         function_lookahead[1]=$'\n'
       fi
 
       if (( ! in_param )) &&
          [[ $arg != function ]] &&
-         [[ ${proc_buf[1]:-} != $'\n' ]] &&
+         [[ ${buf[raw_cursor]:-} != $'\n' ]] &&
          ( (( $#in_alias == 0 )) || [[ ${zsyh_user_options[aliasfuncdef]:-off} == on ]] ) &&
          ! $saw_assignment &&
          (
@@ -2201,10 +2216,24 @@ _zsh_highlight_main_highlighter_highlight_list()
     fi
     _zsh_highlight_main_add_region_highlight $start_pos $end_pos $style
   done
-  (( $#in_alias )) && in_alias=() _zsh_highlight_main_add_region_highlight $start_pos $end_pos $alias_style
-  (( in_param == 1 )) && in_param=0 _zsh_highlight_main_add_region_highlight $start_pos $end_pos $param_style
-  [[ "$proc_buf" = (#b)(#s)(([[:space:]]|\\$'\n')#) ]]
-  REPLY=$(( end_pos + ${#match[1]} - 1 ))
+  integer trailing_offset=0
+  while (( raw_cursor <= len )); do
+    if [[ $buf[raw_cursor] == [[:space:]] ]]; then
+      (( raw_cursor++ ))
+      (( trailing_offset++ ))
+    elif [[ $buf[raw_cursor] == '\' && $buf[$(( raw_cursor + 1 ))] == $'\n' ]]; then
+      (( raw_cursor += 2 ))
+      (( trailing_offset += 2 ))
+    else
+      break
+    fi
+  done
+  if (( in_param > 0 )); then
+    in_param=0
+    _zsh_highlight_main_add_region_highlight $start_pos $end_pos $param_style
+    param_style=''
+  fi
+  REPLY=$(( end_pos + trailing_offset - 1 ))
   reply=($list_highlights)
   return $(( $#braces_stack > 0 ))
 }
