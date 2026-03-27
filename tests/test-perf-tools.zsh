@@ -8,6 +8,12 @@ typeset -gr profile_tool=$repo_root/tools/profile-highlighting.zsh
 typeset -gr benchmark_tool=$repo_root/tools/benchmark-highlighting.zsh
 typeset -gr zprof_tool=$repo_root/tests/test-zprof.zsh
 
+source "$repo_root/tools/highlighting-perf-lib.zsh" || {
+  print -r -- '1..1'
+  print -r -- 'not ok 1 - source perf library'
+  exit 1
+}
+
 integer test_count=0 failure_count=0
 typeset -g REPLY=''
 
@@ -81,6 +87,13 @@ else
   _not_ok 'benchmark tool handles fixed input mode' "unexpected failure: ${(qqq)$(<"$stderr_file")}"
 fi
 
+if zsh -f "$benchmark_tool" --highlighters maim --scenario long-pipeline --lengths 1 --runs 1 >| "$stdout_file" 2>| "$stderr_file"; then
+  _not_ok 'benchmark tool rejects unknown highlighters' 'unexpected success'
+else
+  errors=$(<"$stderr_file")
+  _assert_contains 'benchmark tool rejects unknown highlighters' "$errors" 'highlighting-perf: unknown highlighter: maim'
+fi
+
 if zsh -f "$zprof_tool" brackets >| "$stdout_file" 2>| "$stderr_file"; then
   output=$(<"$stdout_file")
   _assert_contains 'zprof harness profiles brackets paint' "$output" '_zsh_highlight_highlighter_brackets_paint'
@@ -104,6 +117,14 @@ fi
     _not_ok 'zprof harness resolves repo paths from script location' "unexpected failure: ${(qqq)$(<"$stderr_file")}"
   fi
 )
+
+BUFFER=''
+zshh_perf_force_repaint "$BUFFER"
+if [[ $_ZSH_HIGHLIGHT_PRIOR_BUFFER != $BUFFER ]]; then
+  _ok 'force repaint keeps empty buffers distinguishable'
+else
+  _not_ok 'force repaint keeps empty buffers distinguishable' 'prior buffer matched the empty test buffer'
+fi
 
 typeset -ga region_highlight
 export ZSH_HIGHLIGHT_PERF_TRACE=1

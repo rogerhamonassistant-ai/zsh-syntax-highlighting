@@ -133,8 +133,23 @@ zshh_perf_setup_runtime() {
 }
 
 zshh_perf_force_repaint() {
-  typeset -g _ZSH_HIGHLIGHT_PRIOR_BUFFER=''
+  local buffer=${1-}
+
+  typeset -g _ZSH_HIGHLIGHT_PRIOR_BUFFER="${buffer}"$'\x1f'
   typeset -gi _ZSH_HIGHLIGHT_PRIOR_CURSOR=-1
+}
+
+zshh_perf_validate_highlighters() {
+  local tool_root=$1
+  shift
+  local highlighter
+
+  for highlighter in "$@"; do
+    [[ -f $tool_root/highlighters/$highlighter/$highlighter-highlighter.zsh ]] || {
+      print -u2 -- "highlighting-perf: unknown highlighter: $highlighter"
+      return 1
+    }
+  done
 }
 
 zshh_perf_run_highlight() {
@@ -147,7 +162,7 @@ zshh_perf_run_highlight() {
   CURSOR=$#BUFFER
   PREBUFFER=''
   region_highlight=()
-  zshh_perf_force_repaint
+  zshh_perf_force_repaint "$buffer"
   _zsh_highlight_perf_reset
   true && _zsh_highlight
 }

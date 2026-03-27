@@ -103,6 +103,7 @@ else
 fi
 
 zshh_perf_setup_runtime "$tool_root" || exit 1
+zshh_perf_validate_highlighters "$tool_root" "${highlighters[@]}" || exit 1
 
 local buffer_label
 if [[ -n $scenario ]]; then
