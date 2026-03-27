@@ -2410,24 +2410,26 @@ _zsh_highlight_main_highlighter_highlight_simple_parameter()
 _zsh_highlight_main__find_command_substitution_end()
 {
   integer pos=$1 depth=1
-  integer in_comment=0
+  integer in_comment=0 at_command_start=1 case_pattern_paren_depth=0
   local quote_mode='' case_state='' word_fragment=''
   local char next_char prev_char
 
   _zsh_highlight_main__find_command_substitution_end__flush_word() {
     [[ -n $word_fragment ]] || return 0
 
-    case $case_state:$word_fragment in
-      (:case)
+    case $case_state:$at_command_start:$word_fragment in
+      (:1:case)
         case_state=await-in
         ;;
-      (await-in:in)
+      (await-in:*:in)
         case_state=pattern
+        case_pattern_paren_depth=0
         ;;
-      (body:esac)
+      (body:*:esac)
         case_state=''
         ;;
     esac
+    (( depth == 1 )) && at_command_start=0
     word_fragment=''
   }
 
@@ -2546,11 +2548,20 @@ _zsh_highlight_main__find_command_substitution_end()
         fi
         ;;
       ('(')
+        if (( depth == 1 )) && [[ $case_state == pattern ]]; then
+          (( case_pattern_paren_depth++ ))
+          continue
+        fi
         (( depth++ ))
         ;;
       (')')
         if (( depth == 1 )) && [[ $case_state == pattern ]]; then
-          case_state=body
+          if (( case_pattern_paren_depth > 0 )); then
+            (( case_pattern_paren_depth-- ))
+          fi
+          if (( case_pattern_paren_depth == 0 )); then
+            case_state=body
+          fi
         else
           (( --depth ))
           if (( depth == 0 )); then
@@ -2562,7 +2573,18 @@ _zsh_highlight_main__find_command_substitution_end()
       (';')
         if [[ $next_char == [\;\|\&] ]] && [[ $case_state == body ]]; then
           case_state=pattern
+          case_pattern_paren_depth=0
         fi
+        (( depth == 1 )) && at_command_start=1
+        ;;
+      ($'\n')
+        if [[ $case_state == await-in ]]; then
+          case_state=''
+        fi
+        (( depth == 1 )) && at_command_start=1
+        ;;
+      ('|'|'&')
+        (( depth == 1 )) && at_command_start=1
         ;;
     esac
   done
