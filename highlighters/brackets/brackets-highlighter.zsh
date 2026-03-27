@@ -39,6 +39,7 @@
 
 typeset -g _zsh_highlight_brackets__cache_buffer=''
 typeset -g _zsh_highlight_brackets__cache_rcquotes='off'
+typeset -g _zsh_highlight_brackets__cache_histchars='!^#'
 typeset -gi _zsh_highlight_brackets__cache_bracket_color_size=0
 typeset -ga _zsh_highlight_brackets__cache_regions
 typeset -gA _zsh_highlight_brackets__cache_matching
@@ -74,11 +75,15 @@ _zsh_highlight_highlighter_brackets_predicate()
 
 _zsh_highlight_brackets__cache_valid_p()
 {
-  local rcquotes_setting=${zsyh_user_options[rcquotes]:-off}
+  local rcquotes_setting=off
+  local histchars_setting=${histchars-'!^#'}
   integer bracket_color_size=$1
+
+  [[ -o rcquotes ]] && rcquotes_setting=on
 
   [[ $_zsh_highlight_brackets__cache_buffer == "$BUFFER" ]] &&
   [[ $_zsh_highlight_brackets__cache_rcquotes == "$rcquotes_setting" ]] &&
+  [[ $_zsh_highlight_brackets__cache_histchars == "$histchars_setting" ]] &&
   (( _zsh_highlight_brackets__cache_bracket_color_size == bracket_color_size ))
 }
 
@@ -275,11 +280,12 @@ _zsh_highlight_highlighter_brackets_paint()
   local -i next_shell_code_scope_id=0 next_backtick_scope_id=0
   local -A levelpos lastoflevel matching literal_level literal_levelpos literal_lastoflevel literal_matching
   local -a cache_regions
-  local rcquotes_setting=${zsyh_user_options[rcquotes]:-off}
+  local rcquotes_setting=off
   (( _zsh_highlight_perf_trace_enabled )) && {
     _zsh_highlight_perf_count 'brackets.paint_calls'
     _zsh_highlight_perf_count 'brackets.paint_chars' $buflen
   }
+  [[ -o rcquotes ]] && rcquotes_setting=on
 
   if _zsh_highlight_brackets__cache_valid_p $bracket_color_size; then
     (( _zsh_highlight_perf_trace_enabled )) && {
@@ -709,6 +715,7 @@ _zsh_highlight_highlighter_brackets_paint()
 
   _zsh_highlight_brackets__cache_buffer=$BUFFER
   _zsh_highlight_brackets__cache_rcquotes=$rcquotes_setting
+  _zsh_highlight_brackets__cache_histchars=${histchars-'!^#'}
   _zsh_highlight_brackets__cache_bracket_color_size=$bracket_color_size
   _zsh_highlight_brackets__cache_regions=("${cache_regions[@]}")
   _zsh_highlight_brackets__cache_matching=("${(kv)matching[@]}")
