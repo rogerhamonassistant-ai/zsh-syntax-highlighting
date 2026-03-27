@@ -40,24 +40,26 @@
 # Whether the brackets highlighter should be called or not.
 _zsh_highlight_highlighter_brackets_predicate()
 {
-  local cursor_moved=0 buffer_modified=0
-
   (( _zsh_highlight_perf_trace_enabled )) && _zsh_highlight_perf_count 'brackets.predicate_calls'
   if [[ $WIDGET == zle-line-finish ]]; then
     (( _zsh_highlight_perf_trace_enabled )) && _zsh_highlight_perf_count 'brackets.predicate_line_finish_hits'
     return 0
   fi
 
-  _zsh_highlight_cursor_moved && cursor_moved=1
-  _zsh_highlight_buffer_modified && buffer_modified=1
-
-  if (( _zsh_highlight_perf_trace_enabled )); then
-    (( cursor_moved )) && _zsh_highlight_perf_count 'brackets.predicate_cursor_moved_hits'
-    (( buffer_modified )) && _zsh_highlight_perf_count 'brackets.predicate_buffer_modified_hits'
-    (( cursor_moved && ! buffer_modified )) && _zsh_highlight_perf_count 'brackets.predicate_cursor_only_hits'
+  if _zsh_highlight_cursor_moved; then
+    (( _zsh_highlight_perf_trace_enabled )) && {
+      _zsh_highlight_perf_count 'brackets.predicate_cursor_moved_hits'
+      _zsh_highlight_perf_count 'brackets.predicate_cursor_only_hits'
+    }
+    return 0
   fi
 
-  (( cursor_moved || buffer_modified ))
+  if _zsh_highlight_buffer_modified; then
+    (( _zsh_highlight_perf_trace_enabled )) && _zsh_highlight_perf_count 'brackets.predicate_buffer_modified_hits'
+    return 0
+  fi
+
+  return 1
 }
 
 _zsh_highlight_brackets_skip_quoted_region()

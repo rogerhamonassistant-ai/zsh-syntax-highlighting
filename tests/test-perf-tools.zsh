@@ -49,8 +49,11 @@ trap 'rm -rf -- "$temp_dir"' EXIT
 
 typeset -gr stdout_file=$temp_dir/stdout.txt
 typeset -gr stderr_file=$temp_dir/stderr.txt
+typeset -gr input_file=$temp_dir/input.zsh
 typeset -g output='' errors=''
 integer exit_code=0
+
+print -r -- 'echo sample' >| "$input_file"
 
 if zsh "$profile_tool" --list-scenarios >| "$stdout_file" 2>| "$stderr_file"; then
   output=$(<"$stdout_file")
@@ -67,6 +70,15 @@ if zsh "$benchmark_tool" --highlighters main --scenario long-pipeline --lengths 
   _assert_contains 'benchmark tool prints trace rows' "$output" $'trace\tmain\tlong-pipeline\t4\t1'
 else
   _not_ok 'benchmark tool runs a traced scenario' "unexpected failure: ${(qqq)$(<"$stderr_file")}"
+fi
+
+if zsh "$benchmark_tool" --highlighters main --input "$input_file" --runs 1 >| "$stdout_file" 2>| "$stderr_file"; then
+  output=$(<"$stdout_file")
+  integer input_rows=${#${(M)${(@f)output}:#main$'\t'*}}
+  _assert_eq 'benchmark tool emits one row for fixed input files' "$input_rows" '1'
+  _assert_contains 'benchmark tool labels fixed input rows with the actual input path' "$output" $'main\t'"$input_file"$'\t'
+else
+  _not_ok 'benchmark tool handles fixed input mode' "unexpected failure: ${(qqq)$(<"$stderr_file")}"
 fi
 
 if zsh "$zprof_tool" brackets >| "$stdout_file" 2>| "$stderr_file"; then

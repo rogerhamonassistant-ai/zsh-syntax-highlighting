@@ -125,15 +125,23 @@ fi
 print -r -- $'highlighters\tscenario\tlength\trun\tbuffer_bytes\tseconds'
 
 integer run
-local buffer
+local buffer scenario_label
+local -a benchmark_lengths
 local -F start_time end_time elapsed
-for length in "${lengths[@]}"; do
+if [[ -n $scenario ]]; then
+  benchmark_lengths=("${lengths[@]}")
+else
+  benchmark_lengths=($#fixed_input)
+fi
+
+for length in "${benchmark_lengths[@]}"; do
   if [[ -n $scenario ]]; then
     zshh_perf_generate_scenario "$scenario" "$length" || exit 1
     buffer=$REPLY
-    input_label=$scenario
+    scenario_label=$scenario
   else
     buffer=$fixed_input
+    scenario_label=$input_label
   fi
 
   for (( run = 1; run <= runs; ++run )); do
@@ -142,10 +150,10 @@ for length in "${lengths[@]}"; do
     end_time=$EPOCHREALTIME
     elapsed=$(( end_time - start_time ))
 
-    print -r -- "${(j:,:)highlighters}"$'\t'"$input_label"$'\t'"$length"$'\t'"$run"$'\t'"$#buffer"$'\t'"$elapsed"
+    print -r -- "${(j:,:)highlighters}"$'\t'"$scenario_label"$'\t'"$length"$'\t'"$run"$'\t'"$#buffer"$'\t'"$elapsed"
 
     if (( trace_mode )); then
-      zshh_perf_dump_trace_tsv $'trace\t'"${(j:,:)highlighters}"$'\t'"$input_label"$'\t'"$length"$'\t'"$run"
+      zshh_perf_dump_trace_tsv $'trace\t'"${(j:,:)highlighters}"$'\t'"$scenario_label"$'\t'"$length"$'\t'"$run"
     fi
   done
 done
