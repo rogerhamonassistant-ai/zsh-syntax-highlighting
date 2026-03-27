@@ -128,6 +128,18 @@ _assert_sgr 'fg hex color parses' 'fg=#aabbcc' '38;2;170;187;204'
 _assert_sgr 'bg hex color parses' 'bg=#aabbcc' '48;2;170;187;204'
 _assert_sgr 'named colors remain supported' 'fg=blue' '34'
 
+if (
+  emulate -LR zsh
+  typeset -gA _render_invocation_options=(ignoreclosebraces off)
+  typeset -ga _render_syntax_option_names=(ignoreclosebraces codex_fake_missing_option)
+  _render_restore_syntax_options
+) 2>| "$stderr_file"; then
+  render_error=$(<"$stderr_file")
+  _assert_eq 'missing syntax options are skipped without stderr noise' "$render_error" ''
+else
+  _not_ok 'missing syntax options are skipped without stderr noise' "unexpected failure: ${(qqq)$(<"$stderr_file")}"
+fi
+
 typeset -gr comment_file=$temp_dir/comment.zsh
 typeset -gr posix_file=$temp_dir/posix.zsh
 print -r -- 'foo () # note' >| "$comment_file"
