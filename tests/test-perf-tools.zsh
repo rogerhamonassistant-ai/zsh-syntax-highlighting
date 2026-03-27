@@ -177,6 +177,12 @@ if (( ${_ZSH_HIGHLIGHT_PERF_COUNTERS[driver.cursor_moved_hits]-0} > 0 )); then
 else
   _not_ok 'brackets trace records cursor movement' 'counter not incremented'
 fi
+_assert_eq 'brackets trace avoids a second full scan on cursor-only repaint' "${_ZSH_HIGHLIGHT_PERF_COUNTERS[brackets.full_scan_calls]-0}" '1'
+if (( ${_ZSH_HIGHLIGHT_PERF_COUNTERS[brackets.cache_reuse_hits]-0} > 0 )); then
+  _ok 'brackets trace records cache reuse on cursor-only repaint'
+else
+  _not_ok 'brackets trace records cache reuse on cursor-only repaint' 'counter not incremented'
+fi
 if (( ${_ZSH_HIGHLIGHT_PERF_COUNTERS[brackets.paint_calls]-0} == 2 )); then
   _ok 'brackets trace records repeated paint calls'
 else
