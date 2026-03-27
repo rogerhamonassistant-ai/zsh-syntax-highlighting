@@ -2492,7 +2492,7 @@ _zsh_highlight_main__find_command_substitution_end()
       continue
     fi
 
-    if [[ $char == [A-Za-z_] ]]; then
+    if [[ $char == [A-Za-z0-9_-] ]]; then
       word_fragment+=$char
       continue
     fi
@@ -2522,7 +2522,7 @@ _zsh_highlight_main__find_command_substitution_end()
         quote_mode=backtick
         ;;
       ('\\')
-        if [[ $next_char == [\(\)] ]]; then
+        if [[ $next_char == [\(\)\$\<\>\=] ]]; then
           (( pos++ ))
         fi
         ;;
