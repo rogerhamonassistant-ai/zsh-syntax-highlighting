@@ -2410,8 +2410,25 @@ _zsh_highlight_main_highlighter_highlight_simple_parameter()
 _zsh_highlight_main__find_command_substitution_end()
 {
   integer pos=$1 depth=1
-  local quote_mode=''
+  local quote_mode='' case_state='' word_fragment=''
   local char next_char
+
+  _zsh_highlight_main__find_command_substitution_end__flush_word() {
+    [[ -n $word_fragment ]] || return 0
+
+    case $case_state:$word_fragment in
+      (:case)
+        case_state=await-in
+        ;;
+      (await-in:in)
+        case_state=pattern
+        ;;
+      (body:esac)
+        case_state=''
+        ;;
+    esac
+    word_fragment=''
+  }
 
   while (( ++pos <= $#arg )); do
     char=$arg[$pos]
@@ -2466,6 +2483,12 @@ _zsh_highlight_main__find_command_substitution_end()
       continue
     fi
 
+    if [[ $char == [A-Za-z_] ]]; then
+      word_fragment+=$char
+      continue
+    fi
+    _zsh_highlight_main__find_command_substitution_end__flush_word
+
     case $char in
       ("'")
         quote_mode=single
@@ -2506,10 +2529,19 @@ _zsh_highlight_main__find_command_substitution_end()
         (( depth++ ))
         ;;
       (')')
-        (( --depth ))
-        if (( depth == 0 )); then
-          REPLY=$pos
-          return 0
+        if (( depth == 1 )) && [[ $case_state == pattern ]]; then
+          case_state=body
+        else
+          (( --depth ))
+          if (( depth == 0 )); then
+            REPLY=$pos
+            return 0
+          fi
+        fi
+        ;;
+      (';')
+        if [[ $next_char == [\;\|\&] ]] && [[ $case_state == body ]]; then
+          case_state=pattern
         fi
         ;;
     esac
