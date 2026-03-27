@@ -2411,8 +2411,11 @@ _zsh_highlight_main__find_command_substitution_end()
 {
   integer pos=$1 depth=1
   integer in_comment=0 at_command_start=1 case_pattern_paren_depth=0
+  integer heredoc_descriptor_end=0 heredoc_descriptor_strip_tabs=0
   local quote_mode='' case_state='' word_fragment=''
   local char next_char prev_char
+  local heredoc_descriptor_value=''
+  local -a pending_heredoc_delimiters pending_heredoc_strip_tabs
 
   _zsh_highlight_main__find_command_substitution_end__backslash_run_is_odd() {
     integer backslash_pos=$1 backslash_count=0
@@ -2501,9 +2504,9 @@ _zsh_highlight_main__find_command_substitution_end()
     return 1
   }
 
-  _zsh_highlight_main__find_heredoc_end() {
-    integer heredoc_pos=$1 strip_tabs=0 line_start line_end
-    local heredoc_char heredoc_delimiter='' heredoc_quote_mode='' heredoc_line compare_line
+  _zsh_highlight_main__parse_heredoc_descriptor() {
+    integer heredoc_pos=$1 strip_tabs=0
+    local heredoc_char heredoc_delimiter='' heredoc_quote_mode=''
 
     (( heredoc_pos += 2 ))
     if [[ $arg[$heredoc_pos] == '-' ]]; then
@@ -2541,32 +2544,42 @@ _zsh_highlight_main__find_command_substitution_end()
       (( heredoc_pos++ ))
     done
 
-    while (( heredoc_pos <= $#arg )) && [[ $arg[$heredoc_pos] != $'\n' ]]; do
-      (( heredoc_pos++ ))
-    done
-    (( heredoc_pos <= $#arg )) || return 1
+    heredoc_descriptor_end=$(( heredoc_pos - 1 ))
+    heredoc_descriptor_value=$heredoc_delimiter
+    heredoc_descriptor_strip_tabs=$strip_tabs
+    return 0
+  }
 
-    line_start=$(( heredoc_pos + 1 ))
-    while (( line_start <= $#arg )); do
-      line_end=$line_start
-      while (( line_end <= $#arg )) && [[ $arg[$line_end] != $'\n' ]]; do
-        (( line_end++ ))
-      done
-      heredoc_line=$arg[$line_start,$(( line_end - 1 ))]
-      compare_line=$heredoc_line
-      if (( strip_tabs )); then
-        while [[ $compare_line == $'\t'* ]]; do
-          compare_line=${compare_line#"$'\t'"}
+  _zsh_highlight_main__skip_pending_heredoc_bodies() {
+    integer line_start=$(( $1 + 1 )) line_end queue_index found_terminator=0
+    local heredoc_line compare_line
+
+    for (( queue_index = 1; queue_index <= $#pending_heredoc_delimiters; ++queue_index )); do
+      found_terminator=0
+      while (( line_start <= $#arg )); do
+        line_end=$line_start
+        while (( line_end <= $#arg )) && [[ $arg[$line_end] != $'\n' ]]; do
+          (( line_end++ ))
         done
-      fi
-      if [[ $compare_line == $heredoc_delimiter ]]; then
-        REPLY=$line_end
-        return 0
-      fi
-      line_start=$(( line_end + 1 ))
+        heredoc_line=$arg[$line_start,$(( line_end - 1 ))]
+        compare_line=$heredoc_line
+        if (( pending_heredoc_strip_tabs[$queue_index] )); then
+          while [[ $compare_line == $'\t'* ]]; do
+            compare_line=${compare_line#"$'\t'"}
+          done
+        fi
+        if [[ $compare_line == ${pending_heredoc_delimiters[$queue_index]} ]]; then
+          line_start=$(( line_end + 1 ))
+          found_terminator=1
+          break
+        fi
+        line_start=$(( line_end + 1 ))
+      done
+      (( found_terminator )) || return 1
     done
 
-    return 1
+    REPLY=$(( line_start - 1 ))
+    return 0
   }
 
   _zsh_highlight_main__find_command_substitution_end__flush_word() {
@@ -2706,8 +2719,10 @@ _zsh_highlight_main__find_command_substitution_end()
         ;;
       ([\<\>=])
         if [[ $char == '<' && $next_char == '<' && ${arg[$(( pos + 2 ))]:-} != '<' ]]; then
-          if _zsh_highlight_main__find_heredoc_end $pos; then
-            pos=$REPLY
+          if _zsh_highlight_main__parse_heredoc_descriptor $pos; then
+            pending_heredoc_delimiters+=("$heredoc_descriptor_value")
+            pending_heredoc_strip_tabs+=("$heredoc_descriptor_strip_tabs")
+            pos=$heredoc_descriptor_end
           else
             return 1
           fi
@@ -2751,6 +2766,15 @@ _zsh_highlight_main__find_command_substitution_end()
         ;;
       ($'\n')
         (( depth == 1 )) && at_command_start=1
+        if (( $#pending_heredoc_delimiters )); then
+          if _zsh_highlight_main__skip_pending_heredoc_bodies $pos; then
+            pos=$REPLY
+            pending_heredoc_delimiters=()
+            pending_heredoc_strip_tabs=()
+          else
+            return 1
+          fi
+        fi
         ;;
       ('|'|'&')
         (( depth == 1 )) && at_command_start=1
