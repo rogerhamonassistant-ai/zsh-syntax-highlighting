@@ -55,7 +55,7 @@ integer exit_code=0
 
 print -r -- 'echo sample' >| "$input_file"
 
-if zsh "$profile_tool" --list-scenarios >| "$stdout_file" 2>| "$stderr_file"; then
+if zsh -f "$profile_tool" --list-scenarios >| "$stdout_file" 2>| "$stderr_file"; then
   output=$(<"$stdout_file")
   _assert_contains 'profile tool lists long pipeline scenario' "$output" 'long-pipeline'
   _assert_contains 'profile tool lists bracket mix scenario' "$output" 'bracket-mix'
@@ -63,7 +63,7 @@ else
   _not_ok 'profile tool lists scenarios' "unexpected failure: ${(qqq)$(<"$stderr_file")}"
 fi
 
-if zsh "$benchmark_tool" --highlighters main --scenario long-pipeline --lengths 4 --runs 1 --trace >| "$stdout_file" 2>| "$stderr_file"; then
+if zsh -f "$benchmark_tool" --highlighters main --scenario long-pipeline --lengths 4 --runs 1 --trace >| "$stdout_file" 2>| "$stderr_file"; then
   output=$(<"$stdout_file")
   _assert_contains 'benchmark tool prints tabular header' "$output" $'highlighters\tscenario\tlength\trun\tbuffer_bytes\tseconds'
   _assert_contains 'benchmark tool prints a main scenario row' "$output" $'main\tlong-pipeline\t4\t1'
@@ -72,7 +72,7 @@ else
   _not_ok 'benchmark tool runs a traced scenario' "unexpected failure: ${(qqq)$(<"$stderr_file")}"
 fi
 
-if zsh "$benchmark_tool" --highlighters main --input "$input_file" --runs 1 >| "$stdout_file" 2>| "$stderr_file"; then
+if zsh -f "$benchmark_tool" --highlighters main --input "$input_file" --runs 1 >| "$stdout_file" 2>| "$stderr_file"; then
   output=$(<"$stdout_file")
   integer input_rows=${#${(M)${(@f)output}:#main$'\t'*}}
   _assert_eq 'benchmark tool emits one row for fixed input files' "$input_rows" '1'
@@ -81,11 +81,18 @@ else
   _not_ok 'benchmark tool handles fixed input mode' "unexpected failure: ${(qqq)$(<"$stderr_file")}"
 fi
 
-if zsh "$zprof_tool" brackets >| "$stdout_file" 2>| "$stderr_file"; then
+if zsh -f "$zprof_tool" brackets >| "$stdout_file" 2>| "$stderr_file"; then
   output=$(<"$stdout_file")
   _assert_contains 'zprof harness profiles brackets paint' "$output" '_zsh_highlight_highlighter_brackets_paint'
 else
   _not_ok 'zprof harness profiles requested highlighter' "unexpected failure: ${(qqq)$(<"$stderr_file")}"
+fi
+
+if zsh -f "$profile_tool" --highlighters main --scenario long-pipeline --length 2 --iterations 2 --trace >| "$stdout_file" 2>| "$stderr_file"; then
+  output=$(<"$stdout_file")
+  _assert_contains 'profile tool accumulates trace counters across iterations' "$output" $'trace\tdriver.invocations\t2'
+else
+  _not_ok 'profile tool accumulates trace counters across iterations' "unexpected failure: ${(qqq)$(<"$stderr_file")}"
 fi
 
 (

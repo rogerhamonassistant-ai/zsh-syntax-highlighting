@@ -119,8 +119,15 @@ zmodload zsh/zprof || _profile_die 'failed to load zsh/zprof'
 zprof -c
 
 integer run
+local key
+local -A trace_totals
 for (( run = 1; run <= iterations; ++run )); do
   zshh_perf_run_highlight "$buffer" "${highlighters[@]}"
+  if (( trace_mode )); then
+    for key in "${(@ok)_ZSH_HIGHLIGHT_PERF_COUNTERS}"; do
+      (( trace_totals[$key] += _ZSH_HIGHLIGHT_PERF_COUNTERS[$key] ))
+    done
+  fi
 done
 
 print -r -- "highlighters=${(j:,:)highlighters}"
@@ -133,5 +140,7 @@ zprof
 if (( trace_mode )); then
   print
   print -r -- $'trace\tkey\tvalue'
-  zshh_perf_dump_trace_tsv 'trace'
+  for key in "${(@ok)trace_totals}"; do
+    print -r -- $'trace\t'"$key"$'\t'"${trace_totals[$key]}"
+  done
 fi
