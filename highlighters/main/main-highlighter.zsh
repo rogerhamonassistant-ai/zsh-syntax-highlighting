@@ -2501,6 +2501,74 @@ _zsh_highlight_main__find_command_substitution_end()
     return 1
   }
 
+  _zsh_highlight_main__find_heredoc_end() {
+    integer heredoc_pos=$1 strip_tabs=0 line_start line_end
+    local heredoc_char heredoc_delimiter='' heredoc_quote_mode='' heredoc_line compare_line
+
+    (( heredoc_pos += 2 ))
+    if [[ $arg[$heredoc_pos] == '-' ]]; then
+      strip_tabs=1
+      (( heredoc_pos++ ))
+    fi
+
+    while (( heredoc_pos <= $#arg )) && [[ $arg[$heredoc_pos] == [\ \t] ]]; do
+      (( heredoc_pos++ ))
+    done
+
+    while (( heredoc_pos <= $#arg )); do
+      heredoc_char=$arg[$heredoc_pos]
+      if [[ -z $heredoc_quote_mode ]]; then
+        case $heredoc_char in
+          ("'"|'"')
+            heredoc_quote_mode=$heredoc_char
+            ;;
+          ('\\')
+            (( heredoc_pos++ ))
+            (( heredoc_pos <= $#arg )) && heredoc_delimiter+=$arg[$heredoc_pos]
+            ;;
+          ([\ \t$'\n'])
+            break
+            ;;
+          (*)
+            heredoc_delimiter+=$heredoc_char
+            ;;
+        esac
+      elif [[ $heredoc_char == $heredoc_quote_mode ]]; then
+        heredoc_quote_mode=''
+      else
+        heredoc_delimiter+=$heredoc_char
+      fi
+      (( heredoc_pos++ ))
+    done
+
+    while (( heredoc_pos <= $#arg )) && [[ $arg[$heredoc_pos] != $'\n' ]]; do
+      (( heredoc_pos++ ))
+    done
+    (( heredoc_pos <= $#arg )) || return 1
+
+    line_start=$(( heredoc_pos + 1 ))
+    while (( line_start <= $#arg )); do
+      line_end=$line_start
+      while (( line_end <= $#arg )) && [[ $arg[$line_end] != $'\n' ]]; do
+        (( line_end++ ))
+      done
+      heredoc_line=$arg[$line_start,$(( line_end - 1 ))]
+      compare_line=$heredoc_line
+      if (( strip_tabs )); then
+        while [[ $compare_line == $'\t'* ]]; do
+          compare_line=${compare_line#"$'\t'"}
+        done
+      fi
+      if [[ $compare_line == $heredoc_delimiter ]]; then
+        REPLY=$line_end
+        return 0
+      fi
+      line_start=$(( line_end + 1 ))
+    done
+
+    return 1
+  }
+
   _zsh_highlight_main__find_command_substitution_end__flush_word() {
     [[ -n $word_fragment ]] || return 0
 
@@ -2637,7 +2705,13 @@ _zsh_highlight_main__find_command_substitution_end()
         fi
         ;;
       ([\<\>=])
-        if [[ $next_char == $'\x28' ]]; then
+        if [[ $char == '<' && $next_char == '<' && ${arg[$(( pos + 2 ))]:-} != '<' ]]; then
+          if _zsh_highlight_main__find_heredoc_end $pos; then
+            pos=$REPLY
+          else
+            return 1
+          fi
+        elif [[ $next_char == $'\x28' ]]; then
           if _zsh_highlight_main__find_command_substitution_end $(( pos + 1 )); then
             pos=$REPLY
           else
