@@ -8,9 +8,8 @@ ZSH_HIGHLIGHT_STYLES[bracket-level-3]=
 BUFFER='echo `print $(( \( ))`'
 
 expected_region_highlight=(
-  '14 14 bracket-level-1' # (
-  '15 15 bracket-level-2' # (
-  '18 18 bracket-error' # (
-  '20 20 bracket-level-2' # )
-  '21 21 bracket-level-1' # )
+  '14 14 bracket-level-1'
+  '15 15 bracket-level-2'
+  '20 20 bracket-level-2'
+  '21 21 bracket-level-1'
 )
