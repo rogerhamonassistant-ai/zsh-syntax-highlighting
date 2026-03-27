@@ -2410,7 +2410,7 @@ _zsh_highlight_main_highlighter_highlight_simple_parameter()
 _zsh_highlight_main__find_command_substitution_end()
 {
   integer pos=$1 depth=1
-  integer in_comment=0 at_command_start=1 case_pattern_paren_depth=0
+  integer in_comment=0 at_command_start=1 case_pattern_paren_depth=0 case_pattern_depth=0
   integer heredoc_descriptor_end=0 heredoc_descriptor_strip_tabs=0
   local quote_mode='' case_state='' word_fragment=''
   local char next_char prev_char
@@ -2505,7 +2505,7 @@ _zsh_highlight_main__find_command_substitution_end()
   }
 
   _zsh_highlight_main__parse_heredoc_descriptor() {
-    integer heredoc_pos=$1 strip_tabs=0
+    integer heredoc_pos=$1 strip_tabs=0 line_pos
     local heredoc_char heredoc_delimiter='' heredoc_quote_mode=''
 
     (( heredoc_pos += 2 ))
@@ -2545,6 +2545,12 @@ _zsh_highlight_main__find_command_substitution_end()
     done
 
     heredoc_descriptor_end=$(( heredoc_pos - 1 ))
+    line_pos=$heredoc_pos
+    while (( line_pos <= $#arg )) && [[ $arg[$line_pos] != $'\n' ]]; do
+      (( line_pos++ ))
+    done
+    (( line_pos <= $#arg )) || return 1
+
     heredoc_descriptor_value=$heredoc_delimiter
     heredoc_descriptor_strip_tabs=$strip_tabs
     return 0
@@ -2591,10 +2597,12 @@ _zsh_highlight_main__find_command_substitution_end()
         ;;
       (await-in:*:in)
         case_state=pattern
+        case_pattern_depth=$depth
         case_pattern_paren_depth=0
         ;;
       (body:*:esac)
         case_state=''
+        case_pattern_depth=0
         ;;
     esac
     (( depth == 1 )) && at_command_start=0
@@ -2735,14 +2743,14 @@ _zsh_highlight_main__find_command_substitution_end()
         fi
         ;;
       ('(')
-        if (( depth == 1 )) && [[ $case_state == pattern ]]; then
+        if (( depth == case_pattern_depth )) && [[ $case_state == pattern ]]; then
           (( case_pattern_paren_depth++ ))
           continue
         fi
         (( depth++ ))
         ;;
       (')')
-        if (( depth == 1 )) && [[ $case_state == pattern ]]; then
+        if (( depth == case_pattern_depth )) && [[ $case_state == pattern ]]; then
           if (( case_pattern_paren_depth > 0 )); then
             (( case_pattern_paren_depth-- ))
           fi
@@ -2760,6 +2768,7 @@ _zsh_highlight_main__find_command_substitution_end()
       (';')
         if [[ $next_char == [\;\|\&] ]] && [[ $case_state == body ]]; then
           case_state=pattern
+          case_pattern_depth=$depth
           case_pattern_paren_depth=0
         fi
         (( depth == 1 )) && at_command_start=1
