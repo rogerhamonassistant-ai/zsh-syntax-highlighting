@@ -2088,6 +2088,14 @@ _zsh_highlight_main_highlighter_highlight_list()
       style=global-alias
     else # $arg is a non-command word
       case $arg in
+        ('=='|'!=')
+                  if [[ $braces_stack == *T* ]]; then
+                    style=default
+                  else
+                    _zsh_highlight_main_highlighter_highlight_argument 1 $(( 1 != in_redirection ))
+                    continue
+                  fi
+                  ;;
         ($'\x29')
                   # subshell or end of array assignment
                   if $in_array_assignment; then
