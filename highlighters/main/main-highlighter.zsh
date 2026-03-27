@@ -2410,8 +2410,9 @@ _zsh_highlight_main_highlighter_highlight_simple_parameter()
 _zsh_highlight_main__find_command_substitution_end()
 {
   integer pos=$1 depth=1
+  integer in_comment=0
   local quote_mode='' case_state='' word_fragment=''
-  local char next_char
+  local char next_char prev_char
 
   _zsh_highlight_main__find_command_substitution_end__flush_word() {
     [[ -n $word_fragment ]] || return 0
@@ -2433,6 +2434,12 @@ _zsh_highlight_main__find_command_substitution_end()
   while (( ++pos <= $#arg )); do
     char=$arg[$pos]
     next_char=${arg[$(( pos + 1 ))]:-}
+    prev_char=${arg[$(( pos - 1 ))]:-}
+
+    if (( in_comment )); then
+      [[ $char == $'\n' ]] && in_comment=0
+      continue
+    fi
 
     case $quote_mode:$char in
       (single:"'")
@@ -2488,6 +2495,19 @@ _zsh_highlight_main__find_command_substitution_end()
       continue
     fi
     _zsh_highlight_main__find_command_substitution_end__flush_word
+
+    if [[ $zsyh_user_options[interactivecomments] == on && $char == $histchars[3] ]]; then
+      if (( pos == 1 )); then
+        in_comment=1
+        continue
+      fi
+      case $prev_char in
+        ([[:space:]]|';'|'('|')'|'|'|'&'|'<'|'>')
+          in_comment=1
+          continue
+          ;;
+      esac
+    fi
 
     case $char in
       ("'")
