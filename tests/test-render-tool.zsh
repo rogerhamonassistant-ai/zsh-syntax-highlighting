@@ -41,6 +41,15 @@ _assert_contains() {
   fi
 }
 
+_assert_not_contains() {
+  local description=$1 haystack=$2 needle=$3
+  if [[ $haystack == *"$needle"* ]]; then
+    _not_ok "$description" "unexpected ${(qqq)needle} in ${(qqq)haystack}"
+  else
+    _ok "$description"
+  fi
+}
+
 _assert_sgr() {
   local description=$1 spec=$2 expected=$3
 
@@ -81,6 +90,36 @@ _run_render() {
   rendered_output=''
   render_error=''
   if zsh "${shell_opts[@]}" "$tool_script" "$input_file" >| "$stdout_file" 2>| "$stderr_file"; then
+    render_exit=0
+  else
+    render_exit=$?
+  fi
+  rendered_output=$(<"$stdout_file")
+  render_error=$(<"$stderr_file")
+}
+
+_run_render_with_helper_args() {
+  local input_file=$1
+  shift
+  local -a helper_args=()
+  while (( $# > 0 )) && [[ $1 == --* ]]; do
+    helper_args+=("$1")
+    if [[ $1 == --highlighters ]]; then
+      shift
+      helper_args+=("$1")
+    fi
+    shift
+  done
+  local -a shell_opts=()
+
+  while (( $# > 0 )); do
+    shell_opts+=( -o "$1" )
+    shift
+  done
+
+  rendered_output=''
+  render_error=''
+  if zsh "${shell_opts[@]}" "$tool_script" "${helper_args[@]}" "$input_file" >| "$stdout_file" 2>| "$stderr_file"; then
     render_exit=0
   else
     render_exit=$?
@@ -142,8 +181,27 @@ fi
 
 typeset -gr comment_file=$temp_dir/comment.zsh
 typeset -gr posix_file=$temp_dir/posix.zsh
+typeset -gr slurp_simple_file=$temp_dir/slurp-simple.zsh
+typeset -gr slurp_multiline_file=$temp_dir/slurp-multiline.zsh
 print -r -- 'foo () # note' >| "$comment_file"
 print -r -- 'command zstyle' >| "$posix_file"
+print -r -- 'echo hello' >| "$slurp_simple_file"
+cat >| "$slurp_multiline_file" <<'EOF'
+typeset -gA defaults=(
+  mode render
+)
+function helper() {
+  :
+}
+case $item in
+  (README.md|INSTALL.md)
+    :
+    ;;
+esac
+cat <<'USAGE'
+$(not-run)
+USAGE
+EOF
 
 _run_render "$comment_file"
 _assert_contains 'comment text stays non-comment without interactivecomments' "$rendered_output" $'\033[31;1m#\033[0m note'
@@ -158,6 +216,23 @@ _assert_contains 'posixbuiltins-off keeps command zstyle unresolved' "$rendered_
 _run_render "$posix_file" posixbuiltins
 _assert_eq 'posixbuiltins render exits cleanly' "$render_exit" '0'
 _assert_contains 'posixbuiltins colors command zstyle as a builtin' "$rendered_output" $'\033[32mzstyle\033[0m'
+
+typeset -g default_render_output='' slurp_render_output=''
+typeset -ga slurp_lines
+
+_run_render "$slurp_simple_file"
+default_render_output=$rendered_output
+_run_render_with_helper_args "$slurp_simple_file" --slurp
+_assert_eq 'slurp render exits cleanly on a simple file' "$render_exit" '0'
+slurp_render_output=$rendered_output
+_assert_eq 'slurp matches default rendering on a simple single-line file' "$slurp_render_output" "$default_render_output"
+
+_run_render_with_helper_args "$slurp_multiline_file" --slurp --highlighters main,brackets
+_assert_eq 'slurp multiline render exits cleanly' "$render_exit" '0'
+slurp_lines=("${(@f)rendered_output}")
+_assert_eq 'slurp preserves multiline line count' "${#slurp_lines}" '14'
+_assert_not_contains 'slurp keeps associative-array opener from rendering as bracket-error' "${slurp_lines[1]}" $'\033[31;1m(\033[0m'
+_assert_not_contains 'slurp keeps function opener brace from rendering as bracket-error' "${slurp_lines[4]}" $'\033[31;1m{\033[0m'
 
 print -r -- "1..$test_count"
 exit "$failure_count"

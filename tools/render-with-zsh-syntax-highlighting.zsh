@@ -49,7 +49,7 @@ typeset -A _render_named_bg=(
 
 _render_usage() {
   cat <<'EOF'
-usage: tools/render-with-zsh-syntax-highlighting.zsh [--highlighters main,brackets] FILE
+usage: tools/render-with-zsh-syntax-highlighting.zsh [--slurp] [--highlighters main,brackets] FILE
 
 Read FILE as text only and print ANSI-colored output using zsh-syntax-highlighting.
 The file contents are never sourced or executed.
@@ -152,8 +152,9 @@ _render_emit_segment() {
 
 _render_line() {
   local line=$1
+  integer line_start_offset=${2:-1}
   integer line_len=${#line}
-  integer start end clipped_start clipped_end idx run_start pos
+  integer absolute_line_end start end clipped_start clipped_end idx run_start pos
   local entry rest spec current_spec next_spec
   local -a style_at
 
@@ -161,6 +162,8 @@ _render_line() {
     print
     return 0
   fi
+
+  (( absolute_line_end = line_start_offset + line_len - 1 ))
 
   style_at=()
   for (( idx = 1; idx <= line_len; ++idx )); do
@@ -176,9 +179,11 @@ _render_line() {
 
     (( clipped_start = start + 1 ))
     (( clipped_end = end ))
-    (( clipped_start < 1 )) && clipped_start=1
-    (( clipped_end > line_len )) && clipped_end=$line_len
+    (( clipped_start < line_start_offset )) && clipped_start=line_start_offset
+    (( clipped_end > absolute_line_end )) && clipped_end=absolute_line_end
     (( clipped_start > clipped_end )) && continue
+    (( clipped_start -= line_start_offset - 1 ))
+    (( clipped_end -= line_start_offset - 1 ))
 
     for (( pos = clipped_start; pos <= clipped_end; ++pos )); do
       style_at[pos]=$spec
@@ -203,14 +208,43 @@ _render_line() {
   print
 }
 
+_render_read_file() {
+  zmodload zsh/mapfile || _render_die 'failed to load zsh/mapfile'
+  REPLY=${mapfile[$1]}
+}
+
+_render_render_slurped_buffer() {
+  local file_content=$1
+  local -a file_lines
+  integer line_start_offset=1 idx
+
+  [[ -n $file_content ]] || return 0
+
+  BUFFER=$file_content
+  CURSOR=$#BUFFER
+  PREBUFFER=''
+  region_highlight=()
+  _zsh_highlight
+
+  file_lines=("${(@f)file_content}")
+  for (( idx = 1; idx <= $#file_lines; ++idx )); do
+    _render_line "${file_lines[idx]}" "$line_start_offset"
+    (( line_start_offset += ${#file_lines[idx]} + 1 ))
+  done
+}
+
 local -a requested_highlighters
 local highlighters_arg= file_arg=
+integer slurp_mode=0
 
 while (( $# > 0 )); do
   case $1 in
     (--help|-h)
       _render_usage
       exit 0
+      ;;
+    (--slurp)
+      slurp_mode=1
       ;;
     (--highlighters)
       shift
@@ -272,16 +306,21 @@ source "$root/zsh-syntax-highlighting.zsh" ||
 
 ZSH_HIGHLIGHT_HIGHLIGHTERS=("${requested_highlighters[@]}")
 
-local line
 local PREBUFFER='' BUFFER='' REPLY='' MARK=0 PENDING=0 REGION_ACTIVE=0 WIDGET=z-sy-h-test-harness-test-widget
 integer CURSOR=0
 region_highlight=()
 
-while IFS= read -r line || [[ -n $line ]]; do
-  BUFFER=$line
-  CURSOR=$#BUFFER
-  region_highlight=()
-  _zsh_highlight
-  _render_line "$BUFFER"
-  PREBUFFER+="$line"$'\n'
-done < "$file_arg"
+if (( slurp_mode )); then
+  _render_read_file "$file_arg"
+  _render_render_slurped_buffer "$REPLY"
+else
+  local line
+  while IFS= read -r line || [[ -n $line ]]; do
+    BUFFER=$line
+    CURSOR=$#BUFFER
+    region_highlight=()
+    _zsh_highlight
+    _render_line "$BUFFER" 1
+    PREBUFFER+="$line"$'\n'
+  done < "$file_arg"
+fi
