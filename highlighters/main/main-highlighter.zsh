@@ -2571,7 +2571,7 @@ _zsh_highlight_main__find_command_substitution_end()
         compare_line=$heredoc_line
         if (( pending_heredoc_strip_tabs[$queue_index] )); then
           while [[ $compare_line == $'\t'* ]]; do
-            compare_line=${compare_line#"$'\t'"}
+            compare_line=${compare_line#$'\t'}
           done
         fi
         if [[ $compare_line == ${pending_heredoc_delimiters[$queue_index]} ]]; then
