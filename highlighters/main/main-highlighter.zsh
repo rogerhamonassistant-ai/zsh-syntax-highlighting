@@ -2414,6 +2414,93 @@ _zsh_highlight_main__find_command_substitution_end()
   local quote_mode='' case_state='' word_fragment=''
   local char next_char prev_char
 
+  _zsh_highlight_main__find_command_substitution_end__backslash_run_is_odd() {
+    integer backslash_pos=$1 backslash_count=0
+
+    while (( backslash_pos > 0 )) && [[ $arg[$backslash_pos] == '\' ]]; do
+      (( backslash_count++ ))
+      (( backslash_pos-- ))
+    done
+
+    (( backslash_count % 2 == 1 ))
+  }
+
+  _zsh_highlight_main__find_parameter_expansion_end() {
+    integer brace_pos=$1 brace_depth=1
+    local brace_quote_mode='' brace_char brace_next_char
+
+    while (( ++brace_pos <= $#arg )); do
+      brace_char=$arg[$brace_pos]
+      brace_next_char=${arg[$(( brace_pos + 1 ))]:-}
+
+      case $brace_quote_mode:$brace_char in
+        (single:"'")
+          brace_quote_mode=''
+          continue
+          ;;
+        (double:'\\')
+          [[ -n $brace_next_char ]] && (( brace_pos++ ))
+          continue
+          ;;
+        (double:'"')
+          brace_quote_mode=''
+          continue
+          ;;
+        (backtick:'\\')
+          [[ -n $brace_next_char ]] && (( brace_pos++ ))
+          continue
+          ;;
+        (backtick:'`')
+          brace_quote_mode=''
+          continue
+          ;;
+      esac
+
+      if [[ -n $brace_quote_mode ]]; then
+        continue
+      fi
+
+      case $brace_char in
+        ("'")
+          brace_quote_mode=single
+          ;;
+        ('"')
+          brace_quote_mode=double
+          ;;
+        ('`')
+          brace_quote_mode=backtick
+          ;;
+        ('\\')
+          [[ -n $brace_next_char ]] && (( brace_pos++ ))
+          ;;
+        ('$')
+          if [[ $brace_next_char == $'\x7b' ]]; then
+            if _zsh_highlight_main__find_parameter_expansion_end $(( brace_pos + 1 )); then
+              brace_pos=$REPLY
+            else
+              return 1
+            fi
+          elif [[ $brace_next_char == $'\x28' ]]; then
+            if _zsh_highlight_main__find_command_substitution_end $(( brace_pos + 1 )); then
+              brace_pos=$REPLY
+            else
+              return 1
+            fi
+          fi
+          ;;
+        ('}')
+          (( --brace_depth ))
+          if (( brace_depth == 0 )); then
+            REPLY=$brace_pos
+            return 0
+          fi
+          ;;
+      esac
+    done
+
+    return 1
+  }
+
   _zsh_highlight_main__find_command_substitution_end__flush_word() {
     [[ -n $word_fragment ]] || return 0
 
@@ -2522,7 +2609,9 @@ _zsh_highlight_main__find_command_substitution_end()
         quote_mode=backtick
         ;;
       ('\\')
-        if [[ $next_char == [\(\)\$\<\>\=] ]]; then
+        if _zsh_highlight_main__find_command_substitution_end__backslash_run_is_odd $pos &&
+           [[ $next_char == [\(\)\$\<\>\=] ]]
+        then
           (( pos++ ))
         fi
         ;;
@@ -2530,6 +2619,12 @@ _zsh_highlight_main__find_command_substitution_end()
         if [[ $next_char == "'" ]]; then
           quote_mode=dollar-single
           (( pos++ ))
+        elif [[ $next_char == $'\x7b' ]]; then
+          if _zsh_highlight_main__find_parameter_expansion_end $(( pos + 1 )); then
+            pos=$REPLY
+          else
+            return 1
+          fi
         elif [[ $next_char == $'\x28' ]]; then
           if _zsh_highlight_main__find_command_substitution_end $(( pos + 1 )); then
             pos=$REPLY
