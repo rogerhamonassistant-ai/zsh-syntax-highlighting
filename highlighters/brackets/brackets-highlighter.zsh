@@ -44,6 +44,17 @@ typeset -gi _zsh_highlight_brackets__cache_bracket_color_size=0
 typeset -ga _zsh_highlight_brackets__cache_regions
 typeset -gA _zsh_highlight_brackets__cache_matching
 
+_zsh_highlight_brackets__effective_rcquotes_setting()
+{
+  local user_rcquotes_setting=${zsyh_user_options[rcquotes]-off}
+
+  if [[ $user_rcquotes_setting == on || -o rcquotes ]]; then
+    REPLY=on
+  else
+    REPLY=off
+  fi
+}
+
 # Whether the brackets highlighter should be called or not.
 _zsh_highlight_highlighter_brackets_predicate()
 {
@@ -75,11 +86,12 @@ _zsh_highlight_highlighter_brackets_predicate()
 
 _zsh_highlight_brackets__cache_valid_p()
 {
-  local rcquotes_setting=off
+  local rcquotes_setting
   local histchars_setting=${histchars-'!^#'}
   integer bracket_color_size=$1
 
-  [[ -o rcquotes ]] && rcquotes_setting=on
+  _zsh_highlight_brackets__effective_rcquotes_setting
+  rcquotes_setting=$REPLY
 
   [[ $_zsh_highlight_brackets__cache_buffer == "$BUFFER" ]] &&
   [[ $_zsh_highlight_brackets__cache_rcquotes == "$rcquotes_setting" ]] &&
@@ -280,12 +292,13 @@ _zsh_highlight_highlighter_brackets_paint()
   local -i next_shell_code_scope_id=0 next_backtick_scope_id=0
   local -A levelpos lastoflevel matching literal_level literal_levelpos literal_lastoflevel literal_matching
   local -a cache_regions
-  local rcquotes_setting=off
+  local rcquotes_setting
   (( _zsh_highlight_perf_trace_enabled )) && {
     _zsh_highlight_perf_count 'brackets.paint_calls'
     _zsh_highlight_perf_count 'brackets.paint_chars' $buflen
   }
-  [[ -o rcquotes ]] && rcquotes_setting=on
+  _zsh_highlight_brackets__effective_rcquotes_setting
+  rcquotes_setting=$REPLY
 
   if _zsh_highlight_brackets__cache_valid_p $bracket_color_size; then
     (( _zsh_highlight_perf_trace_enabled )) && {

@@ -227,5 +227,27 @@ else
 fi
 histchars='!^#'
 
+unsetopt rcquotes
+BUFFER=$'print \'a\'\'b\''
+CURSOR=3
+region_highlight=()
+_zsh_highlight_perf_reset
+true && _zsh_highlight
+setopt rcquotes
+CURSOR=4
+region_highlight=()
+true && _zsh_highlight
+if (( ${_ZSH_HIGHLIGHT_PERF_COUNTERS[brackets.cache_reuse_hits]-0} == 0 )); then
+  _ok 'brackets cache invalidates on rcquotes changes'
+else
+  _not_ok 'brackets cache invalidates on rcquotes changes' "expected 0 cache reuses, got ${_ZSH_HIGHLIGHT_PERF_COUNTERS[brackets.cache_reuse_hits]-0}"
+fi
+if (( ${_ZSH_HIGHLIGHT_PERF_COUNTERS[brackets.full_scan_calls]-0} == 2 )); then
+  _ok 'brackets reruns a full scan after rcquotes changes'
+else
+  _not_ok 'brackets reruns a full scan after rcquotes changes' "expected 2 full scans, got ${_ZSH_HIGHLIGHT_PERF_COUNTERS[brackets.full_scan_calls]-0}"
+fi
+unsetopt rcquotes
+
 print -r -- "1..$test_count"
 exit "$failure_count"
