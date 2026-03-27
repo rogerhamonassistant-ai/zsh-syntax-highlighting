@@ -7,6 +7,7 @@ typeset -gr repo_root=${0:A:h:h}
 typeset -gr profile_tool=$repo_root/tools/profile-highlighting.zsh
 typeset -gr benchmark_tool=$repo_root/tools/benchmark-highlighting.zsh
 typeset -gr zprof_tool=$repo_root/tests/test-zprof.zsh
+typeset -gr test_shell=${${${(z)$(ps -p $$ -o command=)}[1]#-}:-${commands[zsh]:-zsh}}
 
 source "$repo_root/tools/highlighting-perf-lib.zsh" || {
   print -r -- '1..1'
@@ -61,7 +62,7 @@ integer exit_code=0
 
 print -r -- 'echo sample' >| "$input_file"
 
-if zsh -f "$profile_tool" --list-scenarios >| "$stdout_file" 2>| "$stderr_file"; then
+if "$test_shell" -f "$profile_tool" --list-scenarios >| "$stdout_file" 2>| "$stderr_file"; then
   output=$(<"$stdout_file")
   _assert_contains 'profile tool lists long pipeline scenario' "$output" 'long-pipeline'
   _assert_contains 'profile tool lists bracket mix scenario' "$output" 'bracket-mix'
@@ -69,7 +70,7 @@ else
   _not_ok 'profile tool lists scenarios' "unexpected failure: ${(qqq)$(<"$stderr_file")}"
 fi
 
-if zsh -f "$benchmark_tool" --highlighters main --scenario long-pipeline --lengths 4 --runs 1 --trace >| "$stdout_file" 2>| "$stderr_file"; then
+if "$test_shell" -f "$benchmark_tool" --highlighters main --scenario long-pipeline --lengths 4 --runs 1 --trace >| "$stdout_file" 2>| "$stderr_file"; then
   output=$(<"$stdout_file")
   _assert_contains 'benchmark tool prints tabular header' "$output" $'highlighters\tscenario\tlength\trun\tbuffer_bytes\tseconds'
   _assert_contains 'benchmark tool prints a main scenario row' "$output" $'main\tlong-pipeline\t4\t1'
@@ -78,7 +79,7 @@ else
   _not_ok 'benchmark tool runs a traced scenario' "unexpected failure: ${(qqq)$(<"$stderr_file")}"
 fi
 
-if zsh -f "$benchmark_tool" --highlighters main --input "$input_file" --runs 1 >| "$stdout_file" 2>| "$stderr_file"; then
+if "$test_shell" -f "$benchmark_tool" --highlighters main --input "$input_file" --runs 1 >| "$stdout_file" 2>| "$stderr_file"; then
   output=$(<"$stdout_file")
   integer input_rows=${#${(M)${(@f)output}:#main$'\t'*}}
   _assert_eq 'benchmark tool emits one row for fixed input files' "$input_rows" '1'
@@ -87,21 +88,21 @@ else
   _not_ok 'benchmark tool handles fixed input mode' "unexpected failure: ${(qqq)$(<"$stderr_file")}"
 fi
 
-if zsh -f "$benchmark_tool" --highlighters maim --scenario long-pipeline --lengths 1 --runs 1 >| "$stdout_file" 2>| "$stderr_file"; then
+if "$test_shell" -f "$benchmark_tool" --highlighters maim --scenario long-pipeline --lengths 1 --runs 1 >| "$stdout_file" 2>| "$stderr_file"; then
   _not_ok 'benchmark tool rejects unknown highlighters' 'unexpected success'
 else
   errors=$(<"$stderr_file")
   _assert_contains 'benchmark tool rejects unknown highlighters' "$errors" 'highlighting-perf: unknown highlighter: maim'
 fi
 
-if zsh -f "$zprof_tool" brackets >| "$stdout_file" 2>| "$stderr_file"; then
+if "$test_shell" -f "$zprof_tool" brackets >| "$stdout_file" 2>| "$stderr_file"; then
   output=$(<"$stdout_file")
   _assert_contains 'zprof harness profiles brackets paint' "$output" '_zsh_highlight_highlighter_brackets_paint'
 else
   _not_ok 'zprof harness profiles requested highlighter' "unexpected failure: ${(qqq)$(<"$stderr_file")}"
 fi
 
-if zsh -f "$profile_tool" --highlighters main --scenario long-pipeline --length 2 --iterations 2 --trace >| "$stdout_file" 2>| "$stderr_file"; then
+if "$test_shell" -f "$profile_tool" --highlighters main --scenario long-pipeline --length 2 --iterations 2 --trace >| "$stdout_file" 2>| "$stderr_file"; then
   output=$(<"$stdout_file")
   _assert_contains 'profile tool accumulates trace counters across iterations' "$output" $'trace\tdriver.invocations\t2'
 else
@@ -110,7 +111,7 @@ fi
 
 (
   builtin cd -q -- "$repo_root/tests" || exit 1
-  if zsh -f ./test-zprof.zsh brackets >| "$stdout_file" 2>| "$stderr_file"; then
+  if "$test_shell" -f ./test-zprof.zsh brackets >| "$stdout_file" 2>| "$stderr_file"; then
     output=$(<"$stdout_file")
     _assert_contains 'zprof harness resolves repo paths from script location' "$output" '_zsh_highlight_highlighter_brackets_paint'
   else
