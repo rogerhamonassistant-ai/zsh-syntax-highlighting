@@ -1529,7 +1529,16 @@ _zsh_highlight_main_highlighter_highlight_list()
         _zsh_highlight_main_add_region_highlight $start_pos $end_pos $style
         continue
       fi
-      local next_function_token=$next_arg
+      local next_function_token=''
+      integer function_peek_depth=$frame_depth function_peek_index
+      while (( function_peek_depth > 0 )); do
+        function_peek_index=${frame_pos[$function_peek_depth]}
+        if (( function_peek_index <= frame_end[$function_peek_depth] )); then
+          next_function_token=${args[function_peek_index]}
+          break
+        fi
+        (( function_peek_depth-- ))
+      done
       if [[ $this_word == *':function_header:'* ]]; then
         if [[ $arg == $'\n' ]]; then
           style=commandseparator
