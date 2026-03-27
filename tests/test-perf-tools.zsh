@@ -88,6 +88,16 @@ else
   _not_ok 'zprof harness profiles requested highlighter' "unexpected failure: ${(qqq)$(<"$stderr_file")}"
 fi
 
+(
+  builtin cd -q -- "$repo_root/tests" || exit 1
+  if zsh -f ./test-zprof.zsh brackets >| "$stdout_file" 2>| "$stderr_file"; then
+    output=$(<"$stdout_file")
+    _assert_contains 'zprof harness resolves repo paths from script location' "$output" '_zsh_highlight_highlighter_brackets_paint'
+  else
+    _not_ok 'zprof harness resolves repo paths from script location' "unexpected failure: ${(qqq)$(<"$stderr_file")}"
+  fi
+)
+
 typeset -ga region_highlight
 export ZSH_HIGHLIGHT_PERF_TRACE=1
 source "$repo_root/zsh-syntax-highlighting.zsh" || {
