@@ -50,6 +50,11 @@ test:
 		env -i QUIET=$$QUIET $${TERM:+"TERM=$$TERM"} $(ZSH) -f tests/test-render-tool.zsh; \
 		: $$(( result |= $$? )); \
 	fi; \
+	if [ -f tests/test-perf-tools.zsh ]; then \
+		echo "Running test perf-tools"; \
+		env -i QUIET=$$QUIET $${TERM:+"TERM=$$TERM"} $(ZSH) -f tests/test-perf-tools.zsh; \
+		: $$(( result |= $$? )); \
+	fi; \
 	hook_path=`git rev-parse --git-path local-tests/test-no-private-details.zsh 2>/dev/null || true`; \
 	if [ -n "$$hook_path" ] && [ -f "$$hook_path" ]; then \
 		$(ZSH) -f "$$hook_path" 1>&2; \
@@ -71,4 +76,10 @@ perf:
 	done; \
 	exit $$result
 
-.PHONY: all install clean test perf
+profile:
+	$(ZSH) -f tools/profile-highlighting.zsh --highlighters main --scenario long-double-quoted-cmdsubst --length 128 --iterations 1 --trace
+
+bench:
+	$(ZSH) -f tools/benchmark-highlighting.zsh --highlighters main --scenario long-double-quoted-cmdsubst --lengths 128,256,512,1024 --runs 3 --trace
+
+.PHONY: all install clean test perf profile bench

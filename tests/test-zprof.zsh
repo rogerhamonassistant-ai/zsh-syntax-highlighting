@@ -28,14 +28,24 @@
 # vim: ft=zsh sw=2 ts=2 et
 # -------------------------------------------------------------------------------------------------
 
+[[ -n "$1" ]] || {
+  echo >&2 "Bail out! You must provide the name of a valid highlighter as argument."
+  exit 2
+}
+
+[[ -f ${0:h:h}/highlighters/$1/$1-highlighter.zsh ]] || {
+  echo >&2 "Bail out! Could not find highlighter ${(qq)1}."
+  exit 2
+}
+
+typeset -gr highlighter_name=$1
+
 # Load the main script.
 typeset -a region_highlight
 . ${0:h:h}/zsh-syntax-highlighting.zsh
 
 # Activate the highlighter.
-ZSH_HIGHLIGHT_HIGHLIGHTERS=(main)
-
-source_file=0.7.1:highlighters/$1/$1-highlighter.zsh
+ZSH_HIGHLIGHT_HIGHLIGHTERS=($1)
 
 # Runs a highlighting test
 # $1: data file
@@ -50,7 +60,7 @@ run_test_internal() {
 
   # Load the data and prepare checking it.
   PREBUFFER=
-  BUFFER=$(cd -- "$srcdir" && git cat-file blob $source_file)
+  BUFFER=$(<"$srcdir"/highlighters/$highlighter_name/$highlighter_name-highlighter.zsh)
   expected_region_highlight=()
 
   zmodload zsh/zprof

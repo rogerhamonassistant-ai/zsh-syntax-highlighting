@@ -111,6 +111,36 @@ fi
 # Array declaring active highlighters names.
 typeset -ga ZSH_HIGHLIGHT_HIGHLIGHTERS
 
+integer -g _zsh_highlight_perf_trace_enabled=0
+if [[ -n ${ZSH_HIGHLIGHT_PERF_TRACE-} ]]; then
+  case ${${ZSH_HIGHLIGHT_PERF_TRACE}:-1:l} in
+    (0|false|no|off)
+      ;;
+    (*)
+      _zsh_highlight_perf_trace_enabled=1
+      ;;
+  esac
+fi
+typeset -gA _ZSH_HIGHLIGHT_PERF_COUNTERS
+
+_zsh_highlight_perf_trace_enabled_p() {
+  (( _zsh_highlight_perf_trace_enabled ))
+}
+
+_zsh_highlight_perf_reset() {
+  (( _zsh_highlight_perf_trace_enabled )) || return 0
+  _ZSH_HIGHLIGHT_PERF_COUNTERS=()
+}
+
+_zsh_highlight_perf_count() {
+  (( _zsh_highlight_perf_trace_enabled )) || return 0
+
+  local key=$1
+  integer delta=${2:-1}
+
+  : $(( _ZSH_HIGHLIGHT_PERF_COUNTERS[$key] += delta ))
+}
+
 # Update ZLE buffer syntax highlighting.
 #
 # Invokes each highlighter that needs updating.
@@ -121,6 +151,10 @@ _zsh_highlight()
   local ret=$?
   # Make it read-only.  Can't combine this with the previous line when POSIX_BUILTINS may be set.
   typeset -r ret
+  (( _zsh_highlight_perf_trace_enabled )) && {
+    _zsh_highlight_perf_count 'driver.invocations'
+    _zsh_highlight_perf_count 'driver.buffer_bytes' $#BUFFER
+  }
 
   # $region_highlight should be predefined, either by zle or by the test suite's mock (non-special) array.
   (( ${+region_highlight[@]} )) || {
@@ -167,6 +201,10 @@ _zsh_highlight()
 
   # Reset region_highlight to build it from scratch
   if (( zsh_highlight__memo_feature )); then
+    (( _zsh_highlight_perf_trace_enabled )) && {
+      _zsh_highlight_perf_count 'driver.memo_cleanup_calls'
+      _zsh_highlight_perf_count 'driver.memo_cleanup_regions' $#region_highlight
+    }
     region_highlight=( "${(@)region_highlight:#*memo=zsh-syntax-highlighting*}" )
   else
     # Legacy codepath.  Not very interoperable with other plugins (issue #418).
@@ -224,6 +262,10 @@ _zsh_highlight()
       # eval cache place for current highlighter and prepare it
       cache_place="_zsh_highlight__highlighter_${highlighter}_cache"
       typeset -ga ${cache_place}
+      (( _zsh_highlight_perf_trace_enabled )) && {
+        _zsh_highlight_perf_count 'driver.highlighter_predicate_checks'
+        _zsh_highlight_perf_count "driver.highlighter_predicate_checks.$highlighter"
+      }
 
       # If highlighter needs to be invoked
       if ! type "_zsh_highlight_highlighter_${highlighter}_predicate" >&/dev/null; then
@@ -231,8 +273,16 @@ _zsh_highlight()
         # TODO: use ${(b)} rather than ${(q)} if supported
         ZSH_HIGHLIGHT_HIGHLIGHTERS=( ${ZSH_HIGHLIGHT_HIGHLIGHTERS:#${highlighter}} )
       elif "_zsh_highlight_highlighter_${highlighter}_predicate"; then
+        (( _zsh_highlight_perf_trace_enabled )) && {
+          _zsh_highlight_perf_count 'driver.highlighter_paint_calls'
+          _zsh_highlight_perf_count "driver.highlighter_paint_calls.$highlighter"
+        }
 
         # save a copy, and cleanup region_highlight
+        (( _zsh_highlight_perf_trace_enabled )) && {
+          _zsh_highlight_perf_count 'driver.region_highlight_copy_calls'
+          _zsh_highlight_perf_count 'driver.region_highlight_copy_regions' $#region_highlight
+        }
         region_highlight_copy=("${region_highlight[@]}")
         region_highlight=()
 
@@ -348,7 +398,13 @@ typeset -gA ZSH_HIGHLIGHT_STYLES
 # Returns 0 if the buffer has changed since _zsh_highlight was last called.
 _zsh_highlight_buffer_modified()
 {
-  [[ "${_ZSH_HIGHLIGHT_PRIOR_BUFFER:-}" != "$BUFFER" ]]
+  local modified=1
+  [[ "${_ZSH_HIGHLIGHT_PRIOR_BUFFER:-}" != "$BUFFER" ]] || modified=0
+  (( _zsh_highlight_perf_trace_enabled )) && {
+    _zsh_highlight_perf_count 'driver.buffer_modified_checks'
+    (( modified )) && _zsh_highlight_perf_count 'driver.buffer_modified_hits'
+  }
+  return $(( ! modified ))
 }
 
 # Whether the cursor has moved or not.
@@ -356,7 +412,13 @@ _zsh_highlight_buffer_modified()
 # Returns 0 if the cursor has moved since _zsh_highlight was last called.
 _zsh_highlight_cursor_moved()
 {
-  [[ -n $CURSOR ]] && [[ -n ${_ZSH_HIGHLIGHT_PRIOR_CURSOR-} ]] && (($_ZSH_HIGHLIGHT_PRIOR_CURSOR != $CURSOR))
+  local moved=1
+  [[ -n $CURSOR ]] && [[ -n ${_ZSH_HIGHLIGHT_PRIOR_CURSOR-} ]] && (($_ZSH_HIGHLIGHT_PRIOR_CURSOR != $CURSOR)) || moved=0
+  (( _zsh_highlight_perf_trace_enabled )) && {
+    _zsh_highlight_perf_count 'driver.cursor_moved_checks'
+    (( moved )) && _zsh_highlight_perf_count 'driver.cursor_moved_hits'
+  }
+  return $(( ! moved ))
 }
 
 # Add a highlight defined by ZSH_HIGHLIGHT_STYLES.
@@ -372,6 +434,7 @@ _zsh_highlight_add_highlight()
   shift 2
   for highlight; do
     if (( $+ZSH_HIGHLIGHT_STYLES[$highlight] )); then
+      (( _zsh_highlight_perf_trace_enabled )) && _zsh_highlight_perf_count 'driver.add_highlight_regions'
       region_highlight+=("$start $end $ZSH_HIGHLIGHT_STYLES[$highlight], memo=zsh-syntax-highlighting")
       break
     fi
