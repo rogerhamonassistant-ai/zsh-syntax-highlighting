@@ -49,7 +49,11 @@ _zsh_highlight_highlighter_brackets_predicate()
   if _zsh_highlight_cursor_moved; then
     (( _zsh_highlight_perf_trace_enabled )) && {
       _zsh_highlight_perf_count 'brackets.predicate_cursor_moved_hits'
-      _zsh_highlight_perf_count 'brackets.predicate_cursor_only_hits'
+      if [[ $BUFFER == "$_ZSH_HIGHLIGHT_PRIOR_BUFFER" ]]; then
+        _zsh_highlight_perf_count 'brackets.predicate_cursor_only_hits'
+      else
+        _zsh_highlight_perf_count 'brackets.predicate_buffer_modified_hits'
+      fi
     }
     return 0
   fi

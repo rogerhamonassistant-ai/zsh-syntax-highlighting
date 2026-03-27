@@ -1036,14 +1036,15 @@ _zsh_highlight_main_highlighter_highlight_list()
   #     alias or from BUFFER.
   # in_param is analogous for parameter expansions
   integer in_param=0 len=$#buf
+  integer trace_enabled=$_zsh_highlight_perf_trace_enabled
   local -a in_alias match mbegin mend list_highlights
   # seen_alias is a map of aliases already seen to avoid loops like alias a=b b=a
   local -A seen_alias
   # Pattern for parameter names
   readonly parameter_name_pattern='([A-Za-z_][A-Za-z0-9_]*|[0-9]+)'
   list_highlights=()
-  _zsh_highlight_main__perf_count 'main.highlight_list_calls'
-  _zsh_highlight_main__perf_count 'main.highlight_list_input_bytes' $#buf
+  (( trace_enabled )) && _zsh_highlight_main__perf_count 'main.highlight_list_calls'
+  (( trace_enabled )) && _zsh_highlight_main__perf_count 'main.highlight_list_input_bytes' $#buf
 
   # "R" for round
   # "Q" for square
@@ -1115,7 +1116,7 @@ _zsh_highlight_main_highlighter_highlight_list()
   else
     args=(${(z)buf})
   fi
-  _zsh_highlight_main__perf_count 'main.highlight_list_token_count' $#args
+  (( trace_enabled )) && _zsh_highlight_main__perf_count 'main.highlight_list_token_count' $#args
 
   # Special case: $(<*) isn't globbing.
   if [[ $braces_stack == 'S' ]] && (( $+args[3] && ! $+args[4] )) && [[ $args[3] == $'\x29' ]] &&
@@ -1127,8 +1128,8 @@ _zsh_highlight_main_highlighter_highlight_list()
     last_arg=$arg
     arg=$args[1]
     shift args
-    _zsh_highlight_main__perf_count 'main.args_shift_ops'
-    _zsh_highlight_main__perf_count 'main.highlight_list_token_iterations'
+    (( trace_enabled )) && _zsh_highlight_main__perf_count 'main.args_shift_ops'
+    (( trace_enabled )) && _zsh_highlight_main__perf_count 'main.highlight_list_token_iterations'
     if [[ ${zsyh_user_options[bareglobqual]:-on} == on ]] &&
        (( $#args )) &&
        [[ $args[1] == $'\x29' ]] &&
@@ -1136,7 +1137,7 @@ _zsh_highlight_main_highlighter_highlight_list()
     then
       arg+=$args[1]
       shift args
-      _zsh_highlight_main__perf_count 'main.args_shift_ops'
+      (( trace_enabled )) && _zsh_highlight_main__perf_count 'main.args_shift_ops'
     fi
     if (( $#in_alias )); then
       (( in_alias[1]-- ))
@@ -1226,8 +1227,8 @@ _zsh_highlight_main_highlighter_highlight_list()
       #
       # Why [,-1] is slower than [,length] isn't clear.
       proc_buf="${proc_buf[offset + raw_token_length + 1,len]}"
-      _zsh_highlight_main__perf_count 'main.proc_buf_rewrites'
-      _zsh_highlight_main__perf_count 'main.proc_buf_rewrite_bytes' $#proc_buf
+      (( trace_enabled )) && _zsh_highlight_main__perf_count 'main.proc_buf_rewrites'
+      (( trace_enabled )) && _zsh_highlight_main__perf_count 'main.proc_buf_rewrite_bytes' $#proc_buf
     fi
 
     # Handle the INTERACTIVE_COMMENTS option.
@@ -1266,8 +1267,8 @@ _zsh_highlight_main_highlighter_highlight_list()
           alias_args=(${(z)REPLY})
         fi
         args=( $alias_args $args )
-        _zsh_highlight_main__perf_count 'main.alias_front_prepend_ops'
-        _zsh_highlight_main__perf_count 'main.alias_front_prepend_args' $#alias_args
+        (( trace_enabled )) && _zsh_highlight_main__perf_count 'main.alias_front_prepend_ops'
+        (( trace_enabled )) && _zsh_highlight_main__perf_count 'main.alias_front_prepend_args' $#alias_args
         if (( $#in_alias == 0 )); then
           alias_style=alias
         else

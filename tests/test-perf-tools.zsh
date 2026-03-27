@@ -179,5 +179,21 @@ else
   _not_ok 'brackets trace records repeated paint calls' "expected 2, got ${_ZSH_HIGHLIGHT_PERF_COUNTERS[brackets.paint_calls]-0}"
 fi
 
+BUFFER='echo (food)'
+CURSOR=4
+region_highlight=()
+_zsh_highlight_perf_reset
+true && _zsh_highlight
+if (( ${_ZSH_HIGHLIGHT_PERF_COUNTERS[brackets.predicate_buffer_modified_hits]-0} > 0 )); then
+  _ok 'brackets trace records edits separately from cursor-only motion'
+else
+  _not_ok 'brackets trace records edits separately from cursor-only motion' 'buffer-modified counter not incremented'
+fi
+if (( ${_ZSH_HIGHLIGHT_PERF_COUNTERS[brackets.predicate_cursor_only_hits]-0} == 0 )); then
+  _ok 'brackets trace keeps edit events out of cursor-only hits'
+else
+  _not_ok 'brackets trace keeps edit events out of cursor-only hits' "expected 0, got ${_ZSH_HIGHLIGHT_PERF_COUNTERS[brackets.predicate_cursor_only_hits]-0}"
+fi
+
 print -r -- "1..$test_count"
 exit "$failure_count"
