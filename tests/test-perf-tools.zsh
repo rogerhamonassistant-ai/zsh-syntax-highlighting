@@ -149,6 +149,8 @@ _zsh_highlight_perf_reset
 true && _zsh_highlight
 _assert_eq 'main trace counts one driver invocation' "${_ZSH_HIGHLIGHT_PERF_COUNTERS[driver.invocations]-0}" '1'
 _assert_eq 'driver avoids region_highlight copy churn' "${_ZSH_HIGHLIGHT_PERF_COUNTERS[driver.region_highlight_copy_calls]-0}" '0'
+_assert_eq 'main trace removes args shift churn' "${_ZSH_HIGHLIGHT_PERF_COUNTERS[main.args_shift_ops]-0}" '0'
+_assert_eq 'main trace removes proc_buf rewrite churn' "${_ZSH_HIGHLIGHT_PERF_COUNTERS[main.proc_buf_rewrites]-0}" '0'
 if (( ${_ZSH_HIGHLIGHT_PERF_COUNTERS[main.highlight_list_calls]-0} > 0 )); then
   _ok 'main trace records highlight_list calls'
 else
