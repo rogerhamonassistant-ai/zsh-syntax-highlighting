@@ -156,10 +156,11 @@ if (( ${_ZSH_HIGHLIGHT_PERF_COUNTERS[main.highlight_list_calls]-0} > 0 )); then
 else
   _not_ok 'main trace records highlight_list calls' 'counter not incremented'
 fi
-if (( ${_ZSH_HIGHLIGHT_PERF_COUNTERS[main.nested_tail_copy_calls]-0} > 0 )); then
-  _ok 'main trace records copied-tail recursion'
+_assert_eq 'main trace removes copied-tail recursion' "${_ZSH_HIGHLIGHT_PERF_COUNTERS[main.nested_tail_copy_calls]-0}" '0'
+if (( ${_ZSH_HIGHLIGHT_PERF_COUNTERS[main.nested_slice_calls]-0} > 0 )); then
+  _ok 'main trace records bounded nested slices'
 else
-  _not_ok 'main trace records copied-tail recursion' 'counter not incremented'
+  _not_ok 'main trace records bounded nested slices' 'counter not incremented'
 fi
 
 ZSH_HIGHLIGHT_HIGHLIGHTERS=(brackets)

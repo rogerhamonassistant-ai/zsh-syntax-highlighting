@@ -94,6 +94,14 @@ _zsh_highlight_main__perf_count_tail_slice() {
   _zsh_highlight_perf_count 'main.nested_tail_copy_bytes' $(( $#arg - start_index + 1 ))
 }
 
+_zsh_highlight_main__perf_count_bounded_slice() {
+  (( _zsh_highlight_perf_trace_enabled )) || return 0
+
+  integer start_index=$1 end_index=$2
+  _zsh_highlight_perf_count 'main.nested_slice_calls'
+  _zsh_highlight_perf_count 'main.nested_slice_bytes' $(( end_index - start_index + 1 ))
+}
+
 _zsh_highlight_main__alias_stack_contains() {
   local alias_name=$1 active_alias_name
   for active_alias_name in "${in_alias[@]}"; do
@@ -2399,6 +2407,434 @@ _zsh_highlight_main_highlighter_highlight_simple_parameter()
   REPLY=$i
 }
 
+_zsh_highlight_main__find_command_substitution_end()
+{
+  integer pos=$1 depth=1
+  integer in_comment=0 at_command_start=1 case_pattern_paren_depth=0 case_pattern_depth=0
+  integer heredoc_descriptor_end=0 heredoc_descriptor_strip_tabs=0
+  local quote_mode='' backtick_resume_mode='' case_state='' word_fragment=''
+  local char next_char prev_char
+  local heredoc_descriptor_value=''
+  local -a pending_heredoc_delimiters pending_heredoc_strip_tabs
+
+  _zsh_highlight_main__find_command_substitution_end__backslash_run_is_odd() {
+    integer backslash_pos=$1 backslash_count=0
+
+    while (( backslash_pos > 0 )) && [[ $arg[$backslash_pos] == '\' ]]; do
+      (( backslash_count++ ))
+      (( backslash_pos-- ))
+    done
+
+    (( backslash_count % 2 == 1 ))
+  }
+
+  _zsh_highlight_main__find_parameter_expansion_end() {
+    integer brace_pos=$1 brace_depth=1
+    local brace_quote_mode='' brace_char brace_next_char
+
+    while (( ++brace_pos <= $#arg )); do
+      brace_char=$arg[$brace_pos]
+      brace_next_char=${arg[$(( brace_pos + 1 ))]:-}
+
+      case $brace_quote_mode:$brace_char in
+        (single:"'")
+          brace_quote_mode=''
+          continue
+          ;;
+        (double:'\\')
+          [[ -n $brace_next_char ]] && (( brace_pos++ ))
+          continue
+          ;;
+        (double:'"')
+          brace_quote_mode=''
+          continue
+          ;;
+        (backtick:'\\')
+          [[ -n $brace_next_char ]] && (( brace_pos++ ))
+          continue
+          ;;
+        (backtick:'`')
+          brace_quote_mode=''
+          continue
+          ;;
+      esac
+
+      if [[ -n $brace_quote_mode ]]; then
+        continue
+      fi
+
+      case $brace_char in
+        ("'")
+          brace_quote_mode=single
+          ;;
+        ('"')
+          brace_quote_mode=double
+          ;;
+        ('`')
+          brace_quote_mode=backtick
+          ;;
+        ('\\')
+          [[ -n $brace_next_char ]] && (( brace_pos++ ))
+          ;;
+        ('$')
+          if [[ $brace_next_char == $'\x7b' ]]; then
+            if _zsh_highlight_main__find_parameter_expansion_end $(( brace_pos + 1 )); then
+              brace_pos=$REPLY
+            else
+              return 1
+            fi
+          elif [[ $brace_next_char == $'\x28' ]]; then
+            if _zsh_highlight_main__find_command_substitution_end $(( brace_pos + 1 )); then
+              brace_pos=$REPLY
+            else
+              return 1
+            fi
+          fi
+          ;;
+        ('}')
+          (( --brace_depth ))
+          if (( brace_depth == 0 )); then
+            REPLY=$brace_pos
+            return 0
+          fi
+          ;;
+      esac
+    done
+
+    return 1
+  }
+
+  _zsh_highlight_main__parse_heredoc_descriptor() {
+    integer heredoc_pos=$1 strip_tabs=0 line_pos
+    local heredoc_char heredoc_delimiter='' heredoc_quote_mode=''
+
+    (( heredoc_pos += 2 ))
+    if [[ $arg[$heredoc_pos] == '-' ]]; then
+      strip_tabs=1
+      (( heredoc_pos++ ))
+    fi
+
+    while (( heredoc_pos <= $#arg )) && [[ $arg[$heredoc_pos] == [\ \t] ]]; do
+      (( heredoc_pos++ ))
+    done
+
+    while (( heredoc_pos <= $#arg )); do
+      heredoc_char=$arg[$heredoc_pos]
+      if [[ -z $heredoc_quote_mode ]]; then
+        case $heredoc_char in
+          ("'"|'"')
+            heredoc_quote_mode=$heredoc_char
+            ;;
+          ('\\')
+            (( heredoc_pos++ ))
+            (( heredoc_pos <= $#arg )) && heredoc_delimiter+=$arg[$heredoc_pos]
+            ;;
+          ([\ \t$'\n'])
+            break
+            ;;
+          (*)
+            heredoc_delimiter+=$heredoc_char
+            ;;
+        esac
+      elif [[ $heredoc_char == $heredoc_quote_mode ]]; then
+        heredoc_quote_mode=''
+      else
+        heredoc_delimiter+=$heredoc_char
+      fi
+      (( heredoc_pos++ ))
+    done
+
+    heredoc_descriptor_end=$(( heredoc_pos - 1 ))
+    line_pos=$heredoc_pos
+    while (( line_pos <= $#arg )) && [[ $arg[$line_pos] != $'\n' ]]; do
+      (( line_pos++ ))
+    done
+    (( line_pos <= $#arg )) || return 1
+
+    heredoc_descriptor_value=$heredoc_delimiter
+    heredoc_descriptor_strip_tabs=$strip_tabs
+    return 0
+  }
+
+  _zsh_highlight_main__skip_pending_heredoc_bodies() {
+    integer line_start=$(( $1 + 1 )) line_end queue_index found_terminator=0
+    local heredoc_line compare_line
+
+    for (( queue_index = 1; queue_index <= $#pending_heredoc_delimiters; ++queue_index )); do
+      found_terminator=0
+      while (( line_start <= $#arg )); do
+        line_end=$line_start
+        while (( line_end <= $#arg )) && [[ $arg[$line_end] != $'\n' ]]; do
+          (( line_end++ ))
+        done
+        heredoc_line=$arg[$line_start,$(( line_end - 1 ))]
+        compare_line=$heredoc_line
+        if (( pending_heredoc_strip_tabs[$queue_index] )); then
+          while [[ $compare_line == $'\t'* ]]; do
+            compare_line=${compare_line#$'\t'}
+          done
+        fi
+        if [[ $compare_line == ${pending_heredoc_delimiters[$queue_index]} ]]; then
+          line_start=$(( line_end + 1 ))
+          found_terminator=1
+          break
+        fi
+        line_start=$(( line_end + 1 ))
+      done
+      (( found_terminator )) || return 1
+    done
+
+    REPLY=$(( line_start - 1 ))
+    return 0
+  }
+
+  _zsh_highlight_main__find_command_substitution_end__flush_word() {
+    [[ -n $word_fragment ]] || return 0
+
+    case $case_state:$at_command_start:$word_fragment in
+      (:1:case)
+        case_state=await-in
+        ;;
+      (await-in:*:in)
+        case_state=pattern
+        case_pattern_depth=$depth
+        case_pattern_paren_depth=0
+        ;;
+      (body:*:esac)
+        case_state=''
+        case_pattern_depth=0
+        ;;
+    esac
+    (( depth == 1 )) && at_command_start=0
+    word_fragment=''
+  }
+
+  while (( ++pos <= $#arg )); do
+    char=$arg[$pos]
+    next_char=${arg[$(( pos + 1 ))]:-}
+    prev_char=${arg[$(( pos - 1 ))]:-}
+
+    if (( in_comment )); then
+      if [[ $char == $'\n' ]]; then
+        in_comment=0
+        (( depth == 1 )) && at_command_start=1
+      fi
+      continue
+    fi
+
+    case $quote_mode:$char in
+      (single:"'")
+        quote_mode=''
+        continue
+        ;;
+      (double:'\\')
+        [[ -n $next_char ]] && (( pos++ ))
+        continue
+        ;;
+      (double:'"')
+        quote_mode=''
+        continue
+        ;;
+      (backtick:'\\')
+        if [[ $next_char == [\$\\\`] ]]; then
+          (( pos++ ))
+        fi
+        continue
+        ;;
+      (backtick:'`')
+        quote_mode=$backtick_resume_mode
+        backtick_resume_mode=''
+        continue
+        ;;
+      (dollar-single:'\\')
+        [[ -n $next_char ]] && (( pos++ ))
+        continue
+        ;;
+      (dollar-single:"'")
+        quote_mode=''
+        continue
+        ;;
+    esac
+
+    if [[ -n $quote_mode ]]; then
+      if [[ $quote_mode == double && $char == '$' && $next_char == $'\x28' ]]; then
+        if _zsh_highlight_main__find_command_substitution_end $(( pos + 1 )); then
+          pos=$REPLY
+        else
+          return 1
+        fi
+      elif [[ $quote_mode == double && $char == '$' && $next_char == "'" ]]; then
+        quote_mode=dollar-single
+        (( pos++ ))
+      elif [[ $quote_mode == double && $char == '`' ]]; then
+        backtick_resume_mode=double
+        quote_mode=backtick
+      fi
+      continue
+    fi
+
+    if [[ $char == [A-Za-z0-9_-] ]]; then
+      word_fragment+=$char
+      continue
+    fi
+    _zsh_highlight_main__find_command_substitution_end__flush_word
+
+    if [[ $zsyh_user_options[interactivecomments] == on && $char == $histchars[3] ]]; then
+      if (( pos == 1 )); then
+        in_comment=1
+        continue
+      fi
+      case $prev_char in
+        ([[:space:]]|';'|'('|')'|'|'|'&'|'<'|'>')
+          in_comment=1
+          continue
+          ;;
+      esac
+    fi
+
+    case $char in
+      ("'")
+        quote_mode=single
+        ;;
+      ('"')
+        quote_mode=double
+        ;;
+      ('`')
+        backtick_resume_mode=''
+        quote_mode=backtick
+        ;;
+      ('\\')
+        if _zsh_highlight_main__find_command_substitution_end__backslash_run_is_odd $pos &&
+           [[ $next_char == [\(\)\$\<\>\=] ]]
+        then
+          (( pos++ ))
+        fi
+        ;;
+      ('$')
+        if [[ $next_char == "'" ]]; then
+          quote_mode=dollar-single
+          (( pos++ ))
+        elif [[ $next_char == $'\x7b' ]]; then
+          if _zsh_highlight_main__find_parameter_expansion_end $(( pos + 1 )); then
+            pos=$REPLY
+          else
+            return 1
+          fi
+        elif [[ $next_char == $'\x28' ]]; then
+          if _zsh_highlight_main__find_command_substitution_end $(( pos + 1 )); then
+            pos=$REPLY
+          else
+            return 1
+          fi
+        fi
+        ;;
+      ([\<\>=])
+        if [[ $char == '<' && $next_char == '<' && ${arg[$(( pos + 2 ))]:-} != '<' ]]; then
+          if _zsh_highlight_main__parse_heredoc_descriptor $pos; then
+            pending_heredoc_delimiters+=("$heredoc_descriptor_value")
+            pending_heredoc_strip_tabs+=("$heredoc_descriptor_strip_tabs")
+            pos=$heredoc_descriptor_end
+          else
+            return 1
+          fi
+        elif [[ $next_char == $'\x28' ]]; then
+          if _zsh_highlight_main__find_command_substitution_end $(( pos + 1 )); then
+            pos=$REPLY
+          else
+            return 1
+          fi
+        fi
+        ;;
+      ('(')
+        if (( depth == case_pattern_depth )) && [[ $case_state == pattern ]]; then
+          (( case_pattern_paren_depth++ ))
+          continue
+        fi
+        (( depth++ ))
+        ;;
+      (')')
+        if (( depth == case_pattern_depth )) && [[ $case_state == pattern ]]; then
+          if (( case_pattern_paren_depth > 0 )); then
+            (( case_pattern_paren_depth-- ))
+          fi
+          if (( case_pattern_paren_depth == 0 )); then
+            case_state=body
+          fi
+        else
+          (( --depth ))
+          if (( depth == 0 )); then
+            REPLY=$pos
+            return 0
+          fi
+        fi
+        ;;
+      (';')
+        if [[ $next_char == [\;\|\&] ]] && [[ $case_state == body ]]; then
+          case_state=pattern
+          case_pattern_depth=$depth
+          case_pattern_paren_depth=0
+        fi
+        (( depth == 1 )) && at_command_start=1
+        ;;
+      ($'\n')
+        (( depth == 1 )) && at_command_start=1
+        if (( $#pending_heredoc_delimiters )); then
+          if _zsh_highlight_main__skip_pending_heredoc_bodies $pos; then
+            pos=$REPLY
+            pending_heredoc_delimiters=()
+            pending_heredoc_strip_tabs=()
+          else
+            return 1
+          fi
+        fi
+        ;;
+      ('|'|'&')
+        (( depth == 1 )) && at_command_start=1
+        ;;
+    esac
+  done
+
+  return 1
+}
+
+_zsh_highlight_main__highlight_paren_construct()
+{
+  integer opener_index=$1 content_start=$2 construct_end
+  local body_style=$3 delimiter_style=$4
+  local close_delimiter_style=${5:-$delimiter_style}
+  integer closed=0 ret=1
+  reply=()
+
+  if _zsh_highlight_main__find_command_substitution_end $(( content_start - 1 )); then
+    construct_end=$REPLY
+    closed=1
+  else
+    construct_end=$#arg
+  fi
+
+  if (( content_start <= construct_end )); then
+    _zsh_highlight_main__perf_count_bounded_slice $content_start $construct_end
+    _zsh_highlight_main_highlighter_highlight_list \
+      $(( start_pos + content_start - 1 )) \
+      S \
+      $closed \
+      "$arg[$content_start,$construct_end]"
+    ret=$?
+  elif (( closed )); then
+    ret=0
+  fi
+
+  reply=(
+    $(( start_pos + opener_index - 1 )) $(( start_pos + construct_end )) $body_style
+    $(( start_pos + opener_index - 1 )) $(( start_pos + opener_index + 1 )) $delimiter_style
+    $reply
+  )
+  if (( closed )); then
+    reply+=($(( start_pos + construct_end - 1 )) $(( start_pos + construct_end )) $close_delimiter_style)
+  fi
+  REPLY=$construct_end
+}
+
 _zsh_highlight_main_highlighter_highlight_nested_construct()
 {
   integer arg1=$1 complex_only=${2:-0} ret start
@@ -2437,18 +2873,8 @@ _zsh_highlight_main_highlighter_highlight_nested_construct()
 
         start=$arg1
         (( arg1 += 2 ))
-        _zsh_highlight_main__perf_count_tail_slice $arg1
-        _zsh_highlight_main_highlighter_highlight_list $(( start_pos + arg1 - 1 )) S $has_end $arg[arg1,-1]
-        ret=$?
-        (( arg1 += REPLY ))
-        reply=(
-          $(( start_pos + start - 1 )) $(( start_pos + arg1 )) $command_style
-          $(( start_pos + start - 1 )) $(( start_pos + start + 1 )) $delimiter_style
-          $reply
-        )
-        if (( ret == 0 )); then
-          reply+=($(( start_pos + arg1 - 1 )) $(( start_pos + arg1 )) $delimiter_style)
-        fi
+        _zsh_highlight_main__highlight_paren_construct $start $arg1 $command_style $delimiter_style
+        (( arg1 = REPLY ))
         REPLY=$arg1
         return 0
       fi
@@ -3095,18 +3521,9 @@ _zsh_highlight_main_highlighter_highlight_argument()
     '=')
       if [[ $arg[i+1] == $'\x28' ]]; then
         (( i += 2 ))
-        _zsh_highlight_main__perf_count_tail_slice $i
-        _zsh_highlight_main_highlighter_highlight_list $(( start_pos + i - 1 )) S $has_end $arg[i,-1]
-        ret=$?
-        (( i += REPLY ))
-        highlights+=(
-          $(( start_pos + $1 - 1 )) $(( start_pos + i )) process-substitution
-          $(( start_pos + $1 - 1 )) $(( start_pos + $1 + 1 )) process-substitution-delimiter
-          $reply
-        )
-        if (( ret == 0 )); then
-          highlights+=($(( start_pos + i - 1 )) $(( start_pos + i )) process-substitution-delimiter)
-        fi
+        _zsh_highlight_main__highlight_paren_construct $1 $i process-substitution process-substitution-delimiter
+        (( i = REPLY ))
+        highlights+=($reply)
       fi
   esac
 
@@ -3162,18 +3579,9 @@ _zsh_highlight_main_highlighter_highlight_argument()
           fi
           start=$i
           (( i += 2 ))
-          _zsh_highlight_main__perf_count_tail_slice $i
-          _zsh_highlight_main_highlighter_highlight_list $(( start_pos + i - 1 )) S $has_end $arg[i,-1]
-          ret=$?
-          (( i += REPLY ))
-          highlights+=(
-            $(( start_pos + start - 1)) $(( start_pos + i )) command-substitution-unquoted
-            $(( start_pos + start - 1)) $(( start_pos + start + 1)) command-substitution-delimiter-unquoted
-            $reply
-          )
-          if (( ret == 0 )); then
-            highlights+=($(( start_pos + i - 1)) $(( start_pos + i )) command-substitution-delimiter-unquoted)
-          fi
+          _zsh_highlight_main__highlight_paren_construct $start $i command-substitution-unquoted command-substitution-delimiter-unquoted
+          (( i = REPLY ))
+          highlights+=($reply)
           continue
         fi
         while [[ $arg[i+1] == [=~#+'^'] ]]; do
@@ -3186,18 +3594,9 @@ _zsh_highlight_main_highlighter_highlight_argument()
         if [[ $arg[i+1] == $'\x28' ]]; then # \x28 = open paren
           start=$i
           (( i += 2 ))
-          _zsh_highlight_main__perf_count_tail_slice $i
-          _zsh_highlight_main_highlighter_highlight_list $(( start_pos + i - 1 )) S $has_end $arg[i,-1]
-          ret=$?
-          (( i += REPLY ))
-          highlights+=(
-            $(( start_pos + start - 1)) $(( start_pos + i )) process-substitution
-            $(( start_pos + start - 1)) $(( start_pos + start + 1 )) process-substitution-delimiter
-            $reply
-          )
-          if (( ret == 0 )); then
-            highlights+=($(( start_pos + i - 1)) $(( start_pos + i )) process-substitution-delimiter)
-          fi
+          _zsh_highlight_main__highlight_paren_construct $start $i process-substitution process-substitution-delimiter
+          (( i = REPLY ))
+          highlights+=($reply)
           continue
         fi
         ;|
@@ -3345,20 +3744,11 @@ _zsh_highlight_main_highlighter_highlight_double_quote()
 
               breaks+=( $last_break $(( start_pos + i - 1 )) )
               (( i += 2 ))
-              _zsh_highlight_main__perf_count_tail_slice $i
-              _zsh_highlight_main_highlighter_highlight_list $(( start_pos + i - 1 )) S $has_end $arg[i,-1]
+              _zsh_highlight_main__highlight_paren_construct $(( i - 2 )) $i command-substitution-quoted command-substitution-delimiter-quoted
               ret=$?
-              (( i += REPLY ))
+              (( i = REPLY ))
               last_break=$(( start_pos + i ))
-              reply=(
-                $saved_reply
-                $j $(( start_pos + i )) command-substitution-quoted
-                $j $(( j + 2 )) command-substitution-delimiter-quoted
-                $reply
-              )
-              if (( ret == 0 )); then
-                reply+=($(( start_pos + i - 1 )) $(( start_pos + i )) command-substitution-delimiter-quoted)
-              fi
+              reply=($saved_reply $reply)
               continue
             else
               continue
@@ -3579,19 +3969,9 @@ _zsh_highlight_main_highlighter_highlight_arithmetic()
           fi
 
           (( i += 2 ))
-          _zsh_highlight_main__perf_count_tail_slice $i
-          _zsh_highlight_main_highlighter_highlight_list $(( start_pos + i - 1 )) S $has_end $arg[i,end_pos]
-          ret=$?
-          (( i += REPLY ))
-          reply=(
-            $saved_reply
-            $j $(( start_pos + i )) command-substitution-quoted
-            $j $(( j + 2 )) command-substitution-delimiter-quoted
-            $reply
-          )
-          if (( ret == 0 )); then
-            reply+=($(( start_pos + i - 1 )) $(( start_pos + i )) command-substitution-delimiter)
-          fi
+          _zsh_highlight_main__highlight_paren_construct $(( i - 2 )) $i command-substitution-quoted command-substitution-delimiter-quoted command-substitution-delimiter
+          (( i = REPLY ))
+          reply=($saved_reply $reply)
           continue
         else
           continue
