@@ -37,6 +37,24 @@
 : ${ZSH_HIGHLIGHT_STYLES[bracket-level-5]:=fg=cyan,bold}
 : ${ZSH_HIGHLIGHT_STYLES[cursor-matchingbracket]:=standout}
 
+typeset -g _zsh_highlight_brackets__cache_buffer=''
+typeset -g _zsh_highlight_brackets__cache_rcquotes='off'
+typeset -g _zsh_highlight_brackets__cache_histchars='!^#'
+typeset -gi _zsh_highlight_brackets__cache_bracket_color_size=0
+typeset -ga _zsh_highlight_brackets__cache_regions
+typeset -gA _zsh_highlight_brackets__cache_matching
+
+_zsh_highlight_brackets__effective_rcquotes_setting()
+{
+  local user_rcquotes_setting=${zsyh_user_options[rcquotes]-off}
+
+  if [[ $user_rcquotes_setting == on || -o rcquotes ]]; then
+    REPLY=on
+  else
+    REPLY=off
+  fi
+}
+
 # Whether the brackets highlighter should be called or not.
 _zsh_highlight_highlighter_brackets_predicate()
 {
@@ -64,6 +82,40 @@ _zsh_highlight_highlighter_brackets_predicate()
   fi
 
   return 1
+}
+
+_zsh_highlight_brackets__cache_valid_p()
+{
+  local rcquotes_setting
+  local histchars_setting=${histchars-'!^#'}
+  integer bracket_color_size=$1
+
+  _zsh_highlight_brackets__effective_rcquotes_setting
+  rcquotes_setting=$REPLY
+
+  [[ $_zsh_highlight_brackets__cache_buffer == "$BUFFER" ]] &&
+  [[ $_zsh_highlight_brackets__cache_rcquotes == "$rcquotes_setting" ]] &&
+  [[ $_zsh_highlight_brackets__cache_histchars == "$histchars_setting" ]] &&
+  (( _zsh_highlight_brackets__cache_bracket_color_size == bracket_color_size ))
+}
+
+_zsh_highlight_brackets__replay_cached_regions()
+{
+  local start end_ style
+  for start end_ style in "${_zsh_highlight_brackets__cache_regions[@]}"; do
+    _zsh_highlight_add_highlight "$start" "$end_" "$style"
+  done
+}
+
+_zsh_highlight_brackets__apply_cursor_overlay()
+{
+  [[ $WIDGET == zle-line-finish ]] && return 0
+
+  integer pos=$(( CURSOR + 1 ))
+  if (( $+_zsh_highlight_brackets__cache_matching[$pos] )); then
+    integer otherpos=${_zsh_highlight_brackets__cache_matching[$pos]}
+    _zsh_highlight_add_highlight $(( otherpos - 1 )) "$otherpos" cursor-matchingbracket
+  fi
 }
 
 _zsh_highlight_brackets_skip_quoted_region()
@@ -239,11 +291,27 @@ _zsh_highlight_highlighter_brackets_paint()
   local -a shell_code_double_quote_depths shell_code_scope_ids shell_code_scope_base_depths arithmetic_group_depths arithmetic_close_pending_depths arithmetic_scope_shell_depths arithmetic_scope_backtick_depths backtick_scope_ids backtick_base_shell_depths backtick_double_quote_states
   local -i next_shell_code_scope_id=0 next_backtick_scope_id=0
   local -A levelpos lastoflevel matching literal_level literal_levelpos literal_lastoflevel literal_matching
+  local -a cache_regions
+  local rcquotes_setting
   (( _zsh_highlight_perf_trace_enabled )) && {
     _zsh_highlight_perf_count 'brackets.paint_calls'
-    _zsh_highlight_perf_count 'brackets.full_scan_calls'
     _zsh_highlight_perf_count 'brackets.paint_chars' $buflen
   }
+  _zsh_highlight_brackets__effective_rcquotes_setting
+  rcquotes_setting=$REPLY
+
+  if _zsh_highlight_brackets__cache_valid_p $bracket_color_size; then
+    (( _zsh_highlight_perf_trace_enabled )) && {
+      _zsh_highlight_perf_count 'brackets.cache_reuse_hits'
+      _zsh_highlight_perf_count 'brackets.cache_region_replays' $(( $#_zsh_highlight_brackets__cache_regions / 3 ))
+    }
+    _zsh_highlight_brackets__replay_cached_regions
+    _zsh_highlight_brackets__apply_cursor_overlay
+    return 0
+  fi
+
+  (( _zsh_highlight_perf_trace_enabled )) && _zsh_highlight_perf_count 'brackets.cache_rebuilds'
+  (( _zsh_highlight_perf_trace_enabled )) && _zsh_highlight_perf_count 'brackets.full_scan_calls'
 
   # Find all brackets and remember which one is matching
   pos=0
@@ -644,28 +712,30 @@ _zsh_highlight_highlighter_brackets_paint()
   for pos in ${(k)levelpos}; do
     if (( $+matching[$pos] )); then
       if (( bracket_color_size )); then
-        _zsh_highlight_add_highlight $((pos - 1)) $pos bracket-level-$(( (levelpos[$pos] - 1) % bracket_color_size + 1 ))
+        cache_regions+=($(( pos - 1 )) $pos bracket-level-$(( (levelpos[$pos] - 1) % bracket_color_size + 1 )))
       fi
     else
-      _zsh_highlight_add_highlight $((pos - 1)) $pos bracket-error
+      cache_regions+=($(( pos - 1 )) $pos bracket-error)
     fi
   done
   for pos in ${(k)literal_levelpos}; do
     if (( $+literal_matching[$pos] )); then
       if (( bracket_color_size )); then
-        _zsh_highlight_add_highlight $((pos - 1)) $pos bracket-level-$(( (literal_levelpos[$pos] - 1) % bracket_color_size + 1 ))
+        cache_regions+=($(( pos - 1 )) $pos bracket-level-$(( (literal_levelpos[$pos] - 1) % bracket_color_size + 1 )))
       fi
     fi
   done
 
-  # If cursor is on a bracket, then highlight corresponding bracket, if any.
-  if [[ $WIDGET != zle-line-finish ]]; then
-    pos=$((CURSOR + 1))
-    if (( $+levelpos[$pos] )) && (( $+matching[$pos] )); then
-      local -i otherpos=$matching[$pos]
-      _zsh_highlight_add_highlight $((otherpos - 1)) $otherpos cursor-matchingbracket
-    fi
-  fi
+  _zsh_highlight_brackets__cache_buffer=$BUFFER
+  _zsh_highlight_brackets__cache_rcquotes=$rcquotes_setting
+  _zsh_highlight_brackets__cache_histchars=${histchars-'!^#'}
+  _zsh_highlight_brackets__cache_bracket_color_size=$bracket_color_size
+  _zsh_highlight_brackets__cache_regions=("${cache_regions[@]}")
+  _zsh_highlight_brackets__cache_matching=("${(kv)matching[@]}")
+  (( _zsh_highlight_perf_trace_enabled )) && _zsh_highlight_perf_count 'brackets.cache_region_count' $(( $#cache_regions / 3 ))
+
+  _zsh_highlight_brackets__replay_cached_regions
+  _zsh_highlight_brackets__apply_cursor_overlay
 }
 
 # Helper function to differentiate type 
