@@ -40,14 +40,38 @@
 # Whether the brackets highlighter should be called or not.
 _zsh_highlight_highlighter_brackets_predicate()
 {
-  [[ $WIDGET == zle-line-finish ]] || _zsh_highlight_cursor_moved || _zsh_highlight_buffer_modified
+  (( _zsh_highlight_perf_trace_enabled )) && _zsh_highlight_perf_count 'brackets.predicate_calls'
+  if [[ $WIDGET == zle-line-finish ]]; then
+    (( _zsh_highlight_perf_trace_enabled )) && _zsh_highlight_perf_count 'brackets.predicate_line_finish_hits'
+    return 0
+  fi
+
+  if _zsh_highlight_cursor_moved; then
+    (( _zsh_highlight_perf_trace_enabled )) && {
+      _zsh_highlight_perf_count 'brackets.predicate_cursor_moved_hits'
+      if [[ $BUFFER == "$_ZSH_HIGHLIGHT_PRIOR_BUFFER" ]]; then
+        _zsh_highlight_perf_count 'brackets.predicate_cursor_only_hits'
+      else
+        _zsh_highlight_perf_count 'brackets.predicate_buffer_modified_hits'
+      fi
+    }
+    return 0
+  fi
+
+  if _zsh_highlight_buffer_modified; then
+    (( _zsh_highlight_perf_trace_enabled )) && _zsh_highlight_perf_count 'brackets.predicate_buffer_modified_hits'
+    return 0
+  fi
+
+  return 1
 }
 
 _zsh_highlight_brackets_skip_quoted_region()
 {
   local mode=$1
-  integer pos=$2
+  integer pos=$2 origin=$2
   local char
+  (( _zsh_highlight_perf_trace_enabled )) && _zsh_highlight_perf_count 'brackets.skip_quoted_region_calls'
 
   while (( pos <= $#BUFFER )); do
     char=$BUFFER[$pos]
@@ -60,6 +84,7 @@ _zsh_highlight_brackets_skip_quoted_region()
             (( pos += 2 ))
             continue
           fi
+          (( _zsh_highlight_perf_trace_enabled )) && _zsh_highlight_perf_count 'brackets.skip_quoted_region_chars' $(( pos - origin + 1 ))
           REPLY=$pos
           return 0
         fi
@@ -71,6 +96,7 @@ _zsh_highlight_brackets_skip_quoted_region()
         fi
         case $mode:$char in
           (dollar-single:"'")
+            (( _zsh_highlight_perf_trace_enabled )) && _zsh_highlight_perf_count 'brackets.skip_quoted_region_chars' $(( pos - origin + 1 ))
             REPLY=$pos
             return 0
             ;;
@@ -81,26 +107,30 @@ _zsh_highlight_brackets_skip_quoted_region()
   done
 
   REPLY=$(( pos - 1 ))
+  (( _zsh_highlight_perf_trace_enabled )) && _zsh_highlight_perf_count 'brackets.skip_quoted_region_chars' $(( REPLY - origin + 1 ))
   return 1
 }
 
 _zsh_highlight_brackets_is_effectively_escaped_in_backtick()
 {
   integer pos=$(( $1 - 1 )) raw_backslashes=0
+  (( _zsh_highlight_perf_trace_enabled )) && _zsh_highlight_perf_count 'brackets.backtick_escape_probe_calls'
 
   while (( pos > 0 )) && [[ $BUFFER[$pos] == '\' ]]; do
     (( raw_backslashes++ ))
     (( pos-- ))
   done
 
+  (( _zsh_highlight_perf_trace_enabled )) && _zsh_highlight_perf_count 'brackets.backtick_escape_probe_backslashes' $raw_backslashes
   (( raw_backslashes > 0 )) || return 1
   (( raw_backslashes % 4 == 1 || raw_backslashes % 4 == 2 ))
 }
 
 _zsh_highlight_brackets_is_arithmetic_expansion()
 {
-  integer pos=$(( $1 + 3 )) paren_depth=0
+  integer pos=$(( $1 + 3 )) origin=$(( $1 + 3 )) paren_depth=0
   local char quote_mode=''
+  (( _zsh_highlight_perf_trace_enabled )) && _zsh_highlight_perf_count 'brackets.arithmetic_probe_calls'
 
   while (( pos <= $#BUFFER )); do
     char=$BUFFER[$pos]
@@ -185,9 +215,11 @@ _zsh_highlight_brackets_is_arithmetic_expansion()
         if (( paren_depth )); then
           (( paren_depth-- ))
         elif [[ ${BUFFER[$(( pos + 1 ))]:-} == ')' ]]; then
+          (( _zsh_highlight_perf_trace_enabled )) && _zsh_highlight_perf_count 'brackets.arithmetic_probe_chars' $(( pos - origin + 2 ))
           REPLY=$(( pos + 1 ))
           return 0
         else
+          (( _zsh_highlight_perf_trace_enabled )) && _zsh_highlight_perf_count 'brackets.arithmetic_probe_chars' $(( pos - origin + 1 ))
           return 1
         fi
         ;;
@@ -195,6 +227,7 @@ _zsh_highlight_brackets_is_arithmetic_expansion()
     (( pos++ ))
   done
 
+  (( _zsh_highlight_perf_trace_enabled )) && _zsh_highlight_perf_count 'brackets.arithmetic_probe_chars' $(( pos - origin ))
   return 1
 }
 
@@ -206,6 +239,11 @@ _zsh_highlight_highlighter_brackets_paint()
   local -a shell_code_double_quote_depths shell_code_scope_ids shell_code_scope_base_depths arithmetic_group_depths arithmetic_close_pending_depths arithmetic_scope_shell_depths arithmetic_scope_backtick_depths backtick_scope_ids backtick_base_shell_depths backtick_double_quote_states
   local -i next_shell_code_scope_id=0 next_backtick_scope_id=0
   local -A levelpos lastoflevel matching literal_level literal_levelpos literal_lastoflevel literal_matching
+  (( _zsh_highlight_perf_trace_enabled )) && {
+    _zsh_highlight_perf_count 'brackets.paint_calls'
+    _zsh_highlight_perf_count 'brackets.full_scan_calls'
+    _zsh_highlight_perf_count 'brackets.paint_chars' $buflen
+  }
 
   # Find all brackets and remember which one is matching
   pos=0

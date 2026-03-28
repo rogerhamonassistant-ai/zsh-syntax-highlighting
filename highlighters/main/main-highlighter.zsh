@@ -82,6 +82,18 @@ _zsh_highlight_highlighter_main_predicate()
   [[ $WIDGET == zle-line-finish ]] || _zsh_highlight_buffer_modified
 }
 
+_zsh_highlight_main__perf_count() {
+  (( _zsh_highlight_perf_trace_enabled )) && _zsh_highlight_perf_count "$@"
+}
+
+_zsh_highlight_main__perf_count_tail_slice() {
+  (( _zsh_highlight_perf_trace_enabled )) || return 0
+
+  integer start_index=$1
+  _zsh_highlight_perf_count 'main.nested_tail_copy_calls'
+  _zsh_highlight_perf_count 'main.nested_tail_copy_bytes' $(( $#arg - start_index + 1 ))
+}
+
 # Helper to deal with tokens crossing line boundaries.
 _zsh_highlight_main_add_region_highlight() {
   integer start=$1 end=$2
@@ -1024,12 +1036,15 @@ _zsh_highlight_main_highlighter_highlight_list()
   #     alias or from BUFFER.
   # in_param is analogous for parameter expansions
   integer in_param=0 len=$#buf
+  integer trace_enabled=$_zsh_highlight_perf_trace_enabled
   local -a in_alias match mbegin mend list_highlights
   # seen_alias is a map of aliases already seen to avoid loops like alias a=b b=a
   local -A seen_alias
   # Pattern for parameter names
   readonly parameter_name_pattern='([A-Za-z_][A-Za-z0-9_]*|[0-9]+)'
   list_highlights=()
+  (( trace_enabled )) && _zsh_highlight_main__perf_count 'main.highlight_list_calls'
+  (( trace_enabled )) && _zsh_highlight_main__perf_count 'main.highlight_list_input_bytes' $#buf
 
   # "R" for round
   # "Q" for square
@@ -1101,6 +1116,7 @@ _zsh_highlight_main_highlighter_highlight_list()
   else
     args=(${(z)buf})
   fi
+  (( trace_enabled )) && _zsh_highlight_main__perf_count 'main.highlight_list_token_count' $#args
 
   # Special case: $(<*) isn't globbing.
   if [[ $braces_stack == 'S' ]] && (( $+args[3] && ! $+args[4] )) && [[ $args[3] == $'\x29' ]] &&
@@ -1112,6 +1128,8 @@ _zsh_highlight_main_highlighter_highlight_list()
     last_arg=$arg
     arg=$args[1]
     shift args
+    (( trace_enabled )) && _zsh_highlight_main__perf_count 'main.args_shift_ops'
+    (( trace_enabled )) && _zsh_highlight_main__perf_count 'main.highlight_list_token_iterations'
     if [[ ${zsyh_user_options[bareglobqual]:-on} == on ]] &&
        (( $#args )) &&
        [[ $args[1] == $'\x29' ]] &&
@@ -1119,6 +1137,7 @@ _zsh_highlight_main_highlighter_highlight_list()
     then
       arg+=$args[1]
       shift args
+      (( trace_enabled )) && _zsh_highlight_main__perf_count 'main.args_shift_ops'
     fi
     if (( $#in_alias )); then
       (( in_alias[1]-- ))
@@ -1208,6 +1227,8 @@ _zsh_highlight_main_highlighter_highlight_list()
       #
       # Why [,-1] is slower than [,length] isn't clear.
       proc_buf="${proc_buf[offset + raw_token_length + 1,len]}"
+      (( trace_enabled )) && _zsh_highlight_main__perf_count 'main.proc_buf_rewrites'
+      (( trace_enabled )) && _zsh_highlight_main__perf_count 'main.proc_buf_rewrite_bytes' $#proc_buf
     fi
 
     # Handle the INTERACTIVE_COMMENTS option.
@@ -1246,6 +1267,8 @@ _zsh_highlight_main_highlighter_highlight_list()
           alias_args=(${(z)REPLY})
         fi
         args=( $alias_args $args )
+        (( trace_enabled )) && _zsh_highlight_main__perf_count 'main.alias_front_prepend_ops'
+        (( trace_enabled )) && _zsh_highlight_main__perf_count 'main.alias_front_prepend_args' $#alias_args
         if (( $#in_alias == 0 )); then
           alias_style=alias
         else
@@ -2345,6 +2368,7 @@ _zsh_highlight_main_highlighter_highlight_nested_construct()
   local -a saved_reply
   local command_style delimiter_style
   reply=()
+  _zsh_highlight_main__perf_count 'main.nested_construct_calls'
 
   case "$arg[$arg1]" in
     "'")
@@ -2375,6 +2399,7 @@ _zsh_highlight_main_highlighter_highlight_nested_construct()
 
         start=$arg1
         (( arg1 += 2 ))
+        _zsh_highlight_main__perf_count_tail_slice $arg1
         _zsh_highlight_main_highlighter_highlight_list $(( start_pos + arg1 - 1 )) S $has_end $arg[arg1,-1]
         ret=$?
         (( arg1 += REPLY ))
@@ -3010,6 +3035,8 @@ _zsh_highlight_main_highlighter_highlight_argument()
 
   local -a match mbegin mend
   local MATCH; integer MBEGIN MEND
+  _zsh_highlight_main__perf_count 'main.highlight_argument_calls'
+  _zsh_highlight_main__perf_count 'main.highlight_argument_bytes' $#arg
 
   case "$arg[i]" in
     '%')
@@ -3030,6 +3057,7 @@ _zsh_highlight_main_highlighter_highlight_argument()
     '=')
       if [[ $arg[i+1] == $'\x28' ]]; then
         (( i += 2 ))
+        _zsh_highlight_main__perf_count_tail_slice $i
         _zsh_highlight_main_highlighter_highlight_list $(( start_pos + i - 1 )) S $has_end $arg[i,-1]
         ret=$?
         (( i += REPLY ))
@@ -3096,6 +3124,7 @@ _zsh_highlight_main_highlighter_highlight_argument()
           fi
           start=$i
           (( i += 2 ))
+          _zsh_highlight_main__perf_count_tail_slice $i
           _zsh_highlight_main_highlighter_highlight_list $(( start_pos + i - 1 )) S $has_end $arg[i,-1]
           ret=$?
           (( i += REPLY ))
@@ -3119,6 +3148,7 @@ _zsh_highlight_main_highlighter_highlight_argument()
         if [[ $arg[i+1] == $'\x28' ]]; then # \x28 = open paren
           start=$i
           (( i += 2 ))
+          _zsh_highlight_main__perf_count_tail_slice $i
           _zsh_highlight_main_highlighter_highlight_list $(( start_pos + i - 1 )) S $has_end $arg[i,-1]
           ret=$?
           (( i += REPLY ))
@@ -3277,6 +3307,7 @@ _zsh_highlight_main_highlighter_highlight_double_quote()
 
               breaks+=( $last_break $(( start_pos + i - 1 )) )
               (( i += 2 ))
+              _zsh_highlight_main__perf_count_tail_slice $i
               _zsh_highlight_main_highlighter_highlight_list $(( start_pos + i - 1 )) S $has_end $arg[i,-1]
               ret=$?
               (( i += REPLY ))
@@ -3402,6 +3433,7 @@ _zsh_highlight_main_highlighter_highlight_backtick()
   local -i arg1=$1 end_ i=$1 last offset=0 start subshell_has_end=0
   local -a highlight_zone highlights offsets
   reply=()
+  _zsh_highlight_main__perf_count 'main.backtick_calls'
 
   last=$(( arg1 + 1 ))
   # Remove one layer of backslashes and find the end
@@ -3436,6 +3468,7 @@ _zsh_highlight_main_highlighter_highlight_backtick()
   done
 
   _zsh_highlight_main_highlighter_highlight_list 0 '' $subshell_has_end $buf
+  _zsh_highlight_main__perf_count 'main.backtick_reparse_bytes' $#buf
 
   # Munge the reply to account for removed backslashes
   for start end_ highlight in $reply; do
@@ -3466,6 +3499,7 @@ _zsh_highlight_main_highlighter_highlight_arithmetic()
   local style
   integer i j k paren_depth ret
   reply=()
+  _zsh_highlight_main__perf_count 'main.arithmetic_calls'
 
   for (( i = $1 + 3 ; i <= end_pos - start_pos ; i += 1 )) ; do
     (( j = i + start_pos - 1 ))
@@ -3507,6 +3541,7 @@ _zsh_highlight_main_highlighter_highlight_arithmetic()
           fi
 
           (( i += 2 ))
+          _zsh_highlight_main__perf_count_tail_slice $i
           _zsh_highlight_main_highlighter_highlight_list $(( start_pos + i - 1 )) S $has_end $arg[i,end_pos]
           ret=$?
           (( i += REPLY ))
