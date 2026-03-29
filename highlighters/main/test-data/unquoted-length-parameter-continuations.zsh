@@ -1,4 +1,4 @@
-BUFFER='echo $#foo $#1 $#12 $#123 $#? $#* $#@ $#- $#1foo $#12foo $#?foo $#*foo $#@foo $#-foo $#_foo $?foo $$foo'
+BUFFER='echo $#foo $#1 $#12 $#123 $#? $#* $#@ $#- $#$ $#$foo $#$$ $#$$foo $#1foo $#12foo $#?foo $#*foo $#@foo $#-foo $#_foo $?foo $$foo'
 
 expected_region_highlight=(
   '1 4 builtin' # echo
@@ -18,22 +18,31 @@ expected_region_highlight=(
   '35 37 parameter-expansion' # $#@
   '39 41 default' # $#-
   '39 41 parameter-expansion' # $#-
-  '43 48 default' # $#1foo
-  '43 45 parameter-expansion' # $#1
-  '50 56 default' # $#12foo
-  '50 53 parameter-expansion' # $#12
-  '58 63 default' # $#?foo
-  '58 60 parameter-expansion' # $#?
-  '65 70 default' # $#*foo
-  '65 67 parameter-expansion' # $#*
-  '72 77 default' # $#@foo
-  '72 74 parameter-expansion' # $#@
-  '79 84 default' # $#-foo
-  '79 81 parameter-expansion' # $#-
-  '86 91 default' # $#_foo
-  '86 91 parameter-expansion' # $#_foo
-  '93 97 default' # $?foo
-  '93 94 parameter-expansion' # $?
-  '99 103 default' # $$foo
-  '99 100 parameter-expansion' # $$
+  '43 45 default' # $#$
+  '43 45 parameter-expansion' # $#$
+  '47 52 default' # $#$foo
+  '47 49 parameter-expansion' # $#$
+  '54 57 default' # $#$$
+  '54 56 parameter-expansion' # $#$
+  '59 65 default' # $#$$foo
+  '59 61 parameter-expansion' # $#$
+  '62 65 parameter-expansion' # $foo
+  '67 72 default' # $#1foo
+  '67 69 parameter-expansion' # $#1
+  '74 80 default' # $#12foo
+  '74 77 parameter-expansion' # $#12
+  '82 87 default' # $#?foo
+  '82 84 parameter-expansion' # $#?
+  '89 94 default' # $#*foo
+  '89 91 parameter-expansion' # $#*
+  '96 101 default' # $#@foo
+  '96 98 parameter-expansion' # $#@
+  '103 108 default' # $#-foo
+  '103 105 parameter-expansion' # $#-
+  '110 115 default' # $#_foo
+  '110 115 parameter-expansion' # $#_foo
+  '117 121 default' # $?foo
+  '117 118 parameter-expansion' # $?
+  '123 127 default' # $$foo
+  '123 124 parameter-expansion' # $$
 )

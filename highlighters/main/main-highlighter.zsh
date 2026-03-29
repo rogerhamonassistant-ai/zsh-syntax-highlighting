@@ -2425,7 +2425,7 @@ _zsh_highlight_main_highlighter_highlight_simple_parameter()
               (( i++ ))
             done
             ;;
-          [\?\*\@\-])
+          [\?\*\@\-\$])
             (( i++ ))
             ;;
         esac
