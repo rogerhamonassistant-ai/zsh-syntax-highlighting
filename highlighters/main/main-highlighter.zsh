@@ -2411,11 +2411,24 @@ _zsh_highlight_main_highlighter_highlight_simple_parameter()
       done
       ;;
     '#')
-      if (( i < $#arg )) && [[ $arg[$(( i + 1 ))] == [A-Za-z_0-9\?\*\@\-] ]]; then
-        (( i++ ))
-        while (( i < $#arg )) && [[ $arg[$(( i + 1 ))] == [A-Za-z0-9_] ]]; do
-          (( i++ ))
-        done
+      if (( i < $#arg )); then
+        case "$arg[$(( i + 1 ))]" in
+          [A-Za-z_])
+            (( i++ ))
+            while (( i < $#arg )) && [[ $arg[$(( i + 1 ))] == [A-Za-z0-9_] ]]; do
+              (( i++ ))
+            done
+            ;;
+          [0-9])
+            (( i++ ))
+            while (( i < $#arg )) && [[ $arg[$(( i + 1 ))] == [0-9] ]]; do
+              (( i++ ))
+            done
+            ;;
+          [\?\*\@\-])
+            (( i++ ))
+            ;;
+        esac
       fi
       ;;
     [*@?$!-] | '$')
