@@ -2410,7 +2410,15 @@ _zsh_highlight_main_highlighter_highlight_simple_parameter()
         (( i++ ))
       done
       ;;
-    [*@#?$!-] | '$')
+    '#')
+      if (( i < $#arg )) && [[ $arg[$(( i + 1 ))] == [A-Za-z_0-9] ]]; then
+        (( i++ ))
+        while (( i < $#arg )) && [[ $arg[$(( i + 1 ))] == [A-Za-z0-9_] ]]; do
+          (( i++ ))
+        done
+      fi
+      ;;
+    [*@?$!-] | '$')
       ;;
     *)
       return 1
