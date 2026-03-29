@@ -102,6 +102,20 @@ _zsh_highlight_main__perf_count_bounded_slice() {
   _zsh_highlight_perf_count 'main.nested_slice_bytes' $(( end_index - start_index + 1 ))
 }
 
+_zsh_highlight_main__reply_needs_outer_style_break() {
+  local _start _end _style
+
+  for _start _end _style in $reply; do
+    case $_style in
+      command-substitution-*|back-quoted-argument*|process-substitution*)
+        return 0
+        ;;
+    esac
+  done
+
+  return 1
+}
+
 _zsh_highlight_main__alias_stack_contains() {
   local alias_name=$1 active_alias_name
   for active_alias_name in "${in_alias[@]}"; do
@@ -2396,7 +2410,28 @@ _zsh_highlight_main_highlighter_highlight_simple_parameter()
         (( i++ ))
       done
       ;;
-    [*@#?$!-] | '$')
+    '#')
+      if (( i < $#arg )); then
+        case "$arg[$(( i + 1 ))]" in
+          [A-Za-z_])
+            (( i++ ))
+            while (( i < $#arg )) && [[ $arg[$(( i + 1 ))] == [A-Za-z0-9_] ]]; do
+              (( i++ ))
+            done
+            ;;
+          [0-9])
+            (( i++ ))
+            while (( i < $#arg )) && [[ $arg[$(( i + 1 ))] == [0-9] ]]; do
+              (( i++ ))
+            done
+            ;;
+          [\?\*\@\-\$])
+            (( i++ ))
+            ;;
+        esac
+      fi
+      ;;
+    [*@?$!-] | '$')
       ;;
     *)
       return 1
@@ -3097,7 +3132,8 @@ _zsh_highlight_main_highlighter_highlight_parameter_expansion()
   local quote_context=${3:-unquoted}
   local parser_state=subject
   integer substring_operator=0
-  local -a match mbegin mend saved_reply highlights
+  integer exclusion_start exclusion_end segment_start base_start base_end exclusion_index
+  local -a match mbegin mend saved_reply highlights nested_exclusions base_highlights
   local MATCH; integer MBEGIN MEND
   reply=()
 
@@ -3116,6 +3152,7 @@ _zsh_highlight_main_highlighter_highlight_parameter_expansion()
   fi
 
   highlights=()
+  nested_exclusions=()
   (( i = arg1 + 2 ))
 
   if [[ $arg[$i] == '(' ]]; then
@@ -3187,6 +3224,9 @@ _zsh_highlight_main_highlighter_highlight_parameter_expansion()
         fi
         saved_reply=($highlights)
         if _zsh_highlight_main_highlighter_highlight_nested_construct $i 0 $quote_context; then
+          if _zsh_highlight_main__reply_needs_outer_style_break; then
+            nested_exclusions+=($(( start_pos + i - 1 )) $(( start_pos + REPLY )))
+          fi
           (( i = REPLY ))
           highlights=($saved_reply $reply)
           (( i++ ))
@@ -3367,8 +3407,24 @@ _zsh_highlight_main_highlighter_highlight_parameter_expansion()
     return 0
   fi
 
+  base_start=$(( start_pos + arg1 - 1 ))
+  base_end=$(( start_pos + end_idx ))
+  base_highlights=()
+  segment_start=$base_start
+  for (( exclusion_index = 1; exclusion_index <= $#nested_exclusions; exclusion_index += 2 )); do
+    exclusion_start=$nested_exclusions[$(( exclusion_index ))]
+    exclusion_end=$nested_exclusions[$(( exclusion_index + 1 ))]
+    if (( segment_start < exclusion_start )); then
+      base_highlights+=($segment_start $exclusion_start parameter-expansion)
+    fi
+    (( segment_start = exclusion_end ))
+  done
+  if (( segment_start < base_end )); then
+    base_highlights+=($segment_start $base_end parameter-expansion)
+  fi
+
   reply=(
-    $(( start_pos + arg1 - 1 )) $(( start_pos + end_idx )) parameter-expansion
+    $base_highlights
     $(( start_pos + arg1 )) $(( start_pos + arg1 + 1 )) parameter-expansion-delimiter
     $highlights
   )
@@ -3558,7 +3614,7 @@ _zsh_highlight_main_highlighter_highlight_argument()
           (( i = REPLY ))
           highlights+=($reply)
           continue
-        elif _zsh_highlight_main_highlighter_highlight_parameter_expansion $i 1 unquoted; then
+        elif _zsh_highlight_main_highlighter_highlight_parameter_expansion $i 0 unquoted; then
           (( i = REPLY ))
           if (( $#reply >= 3 )) &&
              [[ $reply[3] == unknown-token ]] &&
@@ -3705,14 +3761,20 @@ _zsh_highlight_main_highlighter_highlight_double_quote()
     case "$arg[$i]" in
       ('"') break;;
       ('`') saved_reply=($reply)
+            breaks+=( $last_break $(( start_pos + i - 1 )) )
             _zsh_highlight_main_highlighter_highlight_backtick $i
             (( i = REPLY ))
+            last_break=$(( start_pos + i ))
             reply=($saved_reply $reply)
             continue
             ;;
       ('$') style=dollar-double-quoted-argument
             saved_reply=($reply)
             if _zsh_highlight_main_highlighter_highlight_parameter_expansion $i 1 quoted; then
+              if _zsh_highlight_main__reply_needs_outer_style_break; then
+                breaks+=( $last_break $(( start_pos + i - 1 )) )
+                last_break=$(( start_pos + REPLY ))
+              fi
               (( i = REPLY ))
               reply=($saved_reply $reply)
               continue

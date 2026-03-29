@@ -35,4 +35,5 @@ expected_region_highlight=(
   '5 5 commandseparator' # |
   '7 10 command' # grep
   '12 18 default' # $needle
+  '12 18 parameter-expansion' # $needle
 )

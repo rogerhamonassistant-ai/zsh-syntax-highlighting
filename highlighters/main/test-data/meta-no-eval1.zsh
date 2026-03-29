@@ -39,9 +39,11 @@ expected_region_highlight=(
   '5 8 builtin' # kill
   '10 11 single-hyphen-option' # -9
   '13 14 default' # $$
+  '13 14 parameter-expansion' # $$
   '15 15 command-substitution-delimiter-unquoted' # )
   '17 34 default' # ${:-$(kill -9 $$)}
-  '17 34 parameter-expansion' # ${:-$(kill -9 $$)}
+  '17 20 parameter-expansion' # ${:-
+  '34 34 parameter-expansion' # }
   '18 18 parameter-expansion-delimiter' # {
   '19 20 parameter-expansion-operator' # :-
   '21 33 command-substitution-unquoted' # $(kill -9 $$)
@@ -49,6 +51,7 @@ expected_region_highlight=(
   '23 26 builtin' # kill
   '28 29 single-hyphen-option' # -9
   '31 32 default' # $$
+  '31 32 parameter-expansion' # $$
   '33 33 command-substitution-delimiter-unquoted' # )
   '34 34 parameter-expansion-delimiter' # }
 )

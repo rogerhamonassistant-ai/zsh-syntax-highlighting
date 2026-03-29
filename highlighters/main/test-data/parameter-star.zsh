@@ -30,11 +30,11 @@
 BUFFER='() { : $* }'
 
 # This tests that $* isn't highlighted as a glob.
-# If we ever add a "unquoted parameter" style, the expectation may change.
 expected_region_highlight=(
   "1 2 reserved-word" # ()
   "4 4 reserved-word" # {
   "6 6 builtin" # :
   "8 9 default" # $*
+  "8 9 parameter-expansion" # $*
   "11 11 reserved-word" # }
 )
