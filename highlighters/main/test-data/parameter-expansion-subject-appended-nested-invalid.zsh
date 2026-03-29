@@ -15,7 +15,8 @@ expected_region_highlight=(
   '44 44 parameter-expansion-delimiter' # }
   '45 45 parameter-expansion-delimiter' # }
   '47 61 default' # ${$(print foo)}
-  '47 61 parameter-expansion' # ${$(print foo)}
+  '47 48 parameter-expansion' # ${
+  '61 61 parameter-expansion' # }
   '48 48 parameter-expansion-delimiter' # {
   '49 60 command-substitution-unquoted' # $(print foo)
   '49 50 command-substitution-delimiter-unquoted' # $(

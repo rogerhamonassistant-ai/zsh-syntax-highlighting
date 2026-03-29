@@ -42,7 +42,8 @@ expected_region_highlight=(
   "16 17 back-quoted-argument-delimiter" # \`
   "18 18 back-quoted-argument-delimiter" # `
   "20 39 default" # "is `echo equal` to"
-  "20 39 double-quoted-argument" # "is `echo equal` to"
+  "20 23 double-quoted-argument" # prefix of "is `echo equal` to"
+  "36 39 double-quoted-argument" #  to"
   "24 35 back-quoted-argument" # `echo equal`
   "24 24 back-quoted-argument-delimiter" # `
   "25 28 builtin" # echo

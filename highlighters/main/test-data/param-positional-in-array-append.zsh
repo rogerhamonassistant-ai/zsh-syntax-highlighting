@@ -36,4 +36,5 @@ expected_region_highlight=(
   '1 4 assign' # l+=(
   '4 4 reserved-word' # (
   '6 7 default' # $1
+  '6 7 parameter-expansion' # $1
 )

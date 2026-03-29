@@ -13,7 +13,8 @@ expected_region_highlight=(
   '16 16 parameter-expansion-operator' # %
   '21 21 parameter-expansion-delimiter' # }
   '23 40 default' # ${(P)$(print foo)}
-  '23 40 parameter-expansion' # ${(P)$(print foo)}
+  '23 27 parameter-expansion' # ${(P)
+  '40 40 parameter-expansion' # }
   '24 24 parameter-expansion-delimiter' # {
   '25 25 parameter-expansion-delimiter' # (
   '26 26 parameter-expansion-flag' # P

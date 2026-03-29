@@ -40,6 +40,7 @@ expected_region_highlight=(
   '13 14 reserved-word' # do
   '16 19 builtin' # echo
   '21 22 default' # $n
+  '21 22 parameter-expansion' # $n
   '23 23 commandseparator' # ;
   '25 27 unknown-token' # end
 )
