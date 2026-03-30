@@ -3551,12 +3551,14 @@ _zsh_highlight_main_highlighter_highlight_glob_qualifiers()
 _zsh_highlight_main_highlighter_highlight_argument()
 {
   local base_style=default i=$1 option_eligible=${2:-1} path_eligible=1 ret start style globbing_seen=false
-  local -a highlights
+  local -a highlights nested_exclusions base_highlights
 
   local -a match mbegin mend
-  local MATCH; integer MBEGIN MEND
+  local MATCH; integer MBEGIN MEND exclusion_start exclusion_end segment_start exclusion_index
   _zsh_highlight_main__perf_count 'main.highlight_argument_calls'
   _zsh_highlight_main__perf_count 'main.highlight_argument_bytes' $#arg
+
+  nested_exclusions=()
 
   case "$arg[i]" in
     '%')
@@ -3591,17 +3593,35 @@ _zsh_highlight_main_highlighter_highlight_argument()
       "") break;;
       "\\") (( i += 1 )); continue;;
       "'")
+        integer construct_start=$i
         _zsh_highlight_main_highlighter_highlight_single_quote $i
+        if [[ $base_style == (single-hyphen-option|double-hyphen-option) ]] &&
+           _zsh_highlight_main__reply_needs_outer_style_break
+        then
+          nested_exclusions+=($(( start_pos + construct_start - 1 )) $(( start_pos + REPLY )))
+        fi
         (( i = REPLY ))
         highlights+=($reply)
         ;;
       '"')
+        integer construct_start=$i
         _zsh_highlight_main_highlighter_highlight_double_quote $i
+        if [[ $base_style == (single-hyphen-option|double-hyphen-option) ]] &&
+           _zsh_highlight_main__reply_needs_outer_style_break
+        then
+          nested_exclusions+=($(( start_pos + construct_start - 1 )) $(( start_pos + REPLY )))
+        fi
         (( i = REPLY ))
         highlights+=($reply)
         ;;
       '`')
+        integer construct_start=$i
         _zsh_highlight_main_highlighter_highlight_backtick $i
+        if [[ $base_style == (single-hyphen-option|double-hyphen-option) ]] &&
+           _zsh_highlight_main__reply_needs_outer_style_break
+        then
+          nested_exclusions+=($(( start_pos + construct_start - 1 )) $(( start_pos + REPLY )))
+        fi
         (( i = REPLY ))
         highlights+=($reply)
         ;;
@@ -3610,11 +3630,18 @@ _zsh_highlight_main_highlighter_highlight_argument()
           path_eligible=0
         fi
         if [[ $arg[i+1] == "'" ]]; then
+          integer construct_start=$i
           _zsh_highlight_main_highlighter_highlight_dollar_quote $i
+          if [[ $base_style == (single-hyphen-option|double-hyphen-option) ]] &&
+             _zsh_highlight_main__reply_needs_outer_style_break
+          then
+            nested_exclusions+=($(( start_pos + construct_start - 1 )) $(( start_pos + REPLY )))
+          fi
           (( i = REPLY ))
           highlights+=($reply)
           continue
         elif _zsh_highlight_main_highlighter_highlight_parameter_expansion $i 0 unquoted; then
+          integer construct_start=$i
           (( i = REPLY ))
           if (( $#reply >= 3 )) &&
              [[ $reply[3] == unknown-token ]] &&
@@ -3623,6 +3650,11 @@ _zsh_highlight_main_highlighter_highlight_argument()
           then
             base_style=unknown-token
           else
+            if [[ $base_style == (single-hyphen-option|double-hyphen-option) ]] &&
+               _zsh_highlight_main__reply_needs_outer_style_break
+            then
+              nested_exclusions+=($(( start_pos + construct_start - 1 )) $(( start_pos + i )))
+            fi
             highlights+=($reply)
           fi
           continue
@@ -3709,7 +3741,25 @@ _zsh_highlight_main_highlighter_highlight_argument()
     fi
   fi
 
-  highlights=($(( start_pos + $1 - 1 )) $end_pos $base_style $highlights)
+  if [[ $base_style == (single-hyphen-option|double-hyphen-option) ]] && (( $#nested_exclusions )); then
+    base_highlights=()
+    segment_start=$(( start_pos + $1 - 1 ))
+    for (( exclusion_index = 1; exclusion_index <= $#nested_exclusions; exclusion_index += 2 )); do
+      exclusion_start=$nested_exclusions[$(( exclusion_index ))]
+      exclusion_end=$nested_exclusions[$(( exclusion_index + 1 ))]
+      if (( segment_start < exclusion_start )); then
+        base_highlights+=($segment_start $exclusion_start $base_style)
+      fi
+      (( segment_start = exclusion_end ))
+    done
+    if (( segment_start < end_pos )); then
+      base_highlights+=($segment_start $end_pos $base_style)
+    fi
+  else
+    base_highlights=($(( start_pos + $1 - 1 )) $end_pos $base_style)
+  fi
+
+  highlights=($base_highlights $highlights)
   _zsh_highlight_main_add_many_region_highlights $highlights
 }
 

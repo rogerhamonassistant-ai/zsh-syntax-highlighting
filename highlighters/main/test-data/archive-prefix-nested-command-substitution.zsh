@@ -4,7 +4,7 @@ expected_region_highlight=(
   '1 3 command' # git
   '5 11 default' # archive
   '17 31 double-hyphen-option' # --format=tar.gz
-  '37 93 double-hyphen-option' # --prefix="${repo::=${$(git remote get-url origin):t:r}}/"
+  '37 45 double-hyphen-option' # --prefix=
   '46 46 double-quoted-argument' # "
   '92 93 double-quoted-argument' # /"
   '47 55 parameter-expansion' # ${repo::=
