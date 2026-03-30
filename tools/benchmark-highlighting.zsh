@@ -126,7 +126,7 @@ fi
 print -r -- $'highlighters\tscenario\tlength\trun\tbuffer_bytes\tseconds'
 
 integer run
-local buffer scenario_label
+local buffer scenario_label scenario_mode=single
 local -a benchmark_lengths
 local -F start_time end_time elapsed
 if [[ -n $scenario ]]; then
@@ -140,14 +140,21 @@ for length in "${benchmark_lengths[@]}"; do
     zshh_perf_generate_scenario "$scenario" "$length" || exit 1
     buffer=$REPLY
     scenario_label=$scenario
+    zshh_perf_scenario_run_mode "$scenario"
+    scenario_mode=$REPLY
   else
     buffer=$fixed_input
     scenario_label=$input_label
+    scenario_mode=single
   fi
 
   for (( run = 1; run <= runs; ++run )); do
     start_time=$EPOCHREALTIME
-    zshh_perf_run_highlight "$buffer" "${highlighters[@]}"
+    if [[ $scenario_mode == cursor-replay ]]; then
+      zshh_perf_run_highlight_cursor_replay "$buffer" "${highlighters[@]}"
+    else
+      zshh_perf_run_highlight "$buffer" "${highlighters[@]}"
+    fi
     end_time=$EPOCHREALTIME
     elapsed=$(( end_time - start_time ))
 

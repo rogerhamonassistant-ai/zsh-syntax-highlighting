@@ -106,9 +106,12 @@ zshh_perf_setup_runtime "$tool_root" || exit 1
 zshh_perf_validate_highlighters "$tool_root" "${highlighters[@]}" || exit 1
 
 local buffer_label
+local scenario_mode=single
 if [[ -n $scenario ]]; then
   zshh_perf_generate_scenario "$scenario" "$length" || exit 1
   buffer_label=$scenario
+  zshh_perf_scenario_run_mode "$scenario"
+  scenario_mode=$REPLY
 else
   zshh_perf_load_input "$input_file" || exit 1
   buffer_label=$input_file
@@ -123,7 +126,11 @@ integer run
 local key
 local -A trace_totals
 for (( run = 1; run <= iterations; ++run )); do
-  zshh_perf_run_highlight "$buffer" "${highlighters[@]}"
+  if [[ $scenario_mode == cursor-replay ]]; then
+    zshh_perf_run_highlight_cursor_replay "$buffer" "${highlighters[@]}"
+  else
+    zshh_perf_run_highlight "$buffer" "${highlighters[@]}"
+  fi
   if (( trace_mode )); then
     for key in "${(@ok)_ZSH_HIGHLIGHT_PERF_COUNTERS}"; do
       (( trace_totals[$key] += _ZSH_HIGHLIGHT_PERF_COUNTERS[$key] ))

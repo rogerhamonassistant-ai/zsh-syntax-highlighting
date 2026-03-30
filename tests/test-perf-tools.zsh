@@ -66,6 +66,8 @@ if "$test_shell" -f "$profile_tool" --list-scenarios >| "$stdout_file" 2>| "$std
   output=$(<"$stdout_file")
   _assert_contains 'profile tool lists long pipeline scenario' "$output" 'long-pipeline'
   _assert_contains 'profile tool lists bracket mix scenario' "$output" 'bracket-mix'
+  _assert_contains 'profile tool lists option nested shell scenario' "$output" 'option-nested-shell-code'
+  _assert_contains 'profile tool lists bracket cursor replay scenario' "$output" 'bracket-cursor-replay'
 else
   _not_ok 'profile tool lists scenarios' "unexpected failure: ${(qqq)$(<"$stderr_file")}"
 fi
@@ -86,6 +88,22 @@ if "$test_shell" -f "$benchmark_tool" --highlighters main --input "$input_file" 
   _assert_contains 'benchmark tool labels fixed input rows with the actual input path' "$output" $'main\t'"$input_file"$'\t'
 else
   _not_ok 'benchmark tool handles fixed input mode' "unexpected failure: ${(qqq)$(<"$stderr_file")}"
+fi
+
+if "$test_shell" -f "$benchmark_tool" --highlighters main --scenario option-nested-shell-code --lengths 2 --runs 1 >| "$stdout_file" 2>| "$stderr_file"; then
+  output=$(<"$stdout_file")
+  _assert_contains 'benchmark tool prints an option nested shell scenario row' "$output" $'main\toption-nested-shell-code\t2\t1'
+else
+  _not_ok 'benchmark tool runs the option nested shell scenario' "unexpected failure: ${(qqq)$(<"$stderr_file")}"
+fi
+
+if "$test_shell" -f "$benchmark_tool" --highlighters brackets --scenario bracket-cursor-replay --lengths 4 --runs 1 --trace >| "$stdout_file" 2>| "$stderr_file"; then
+  output=$(<"$stdout_file")
+  _assert_contains 'benchmark tool prints a bracket cursor replay row' "$output" $'brackets\tbracket-cursor-replay\t4\t1'
+  _assert_contains 'cursor replay trace records cache reuse' "$output" $'trace\tbrackets\tbracket-cursor-replay\t4\t1\tbrackets.cache_reuse_hits\t1'
+  _assert_contains 'cursor replay trace records cursor movement' "$output" $'trace\tbrackets\tbracket-cursor-replay\t4\t1\tdriver.cursor_moved_hits\t1'
+else
+  _not_ok 'benchmark tool runs the bracket cursor replay scenario' "unexpected failure: ${(qqq)$(<"$stderr_file")}"
 fi
 
 if "$test_shell" -f "$benchmark_tool" --highlighters maim --scenario long-pipeline --lengths 1 --runs 1 >| "$stdout_file" 2>| "$stderr_file"; then
@@ -188,6 +206,15 @@ if (( ${_ZSH_HIGHLIGHT_PERF_COUNTERS[brackets.paint_calls]-0} == 2 )); then
 else
   _not_ok 'brackets trace records repeated paint calls' "expected 2, got ${_ZSH_HIGHLIGHT_PERF_COUNTERS[brackets.paint_calls]-0}"
 fi
+
+BUFFER='([{}]) ([{}])'
+CURSOR=0
+region_highlight=()
+_zsh_highlight_perf_reset
+zshh_perf_run_highlight_cursor_replay "$BUFFER" brackets
+_assert_eq 'cursor replay helper skips a structural full scan on the replay paint' "${_ZSH_HIGHLIGHT_PERF_COUNTERS[brackets.full_scan_calls]-0}" '0'
+_assert_eq 'cursor replay helper records one cache reuse' "${_ZSH_HIGHLIGHT_PERF_COUNTERS[brackets.cache_reuse_hits]-0}" '1'
+_assert_eq 'cursor replay helper records cursor movement' "${_ZSH_HIGHLIGHT_PERF_COUNTERS[driver.cursor_moved_hits]-0}" '1'
 
 BUFFER='echo (food)'
 CURSOR=4
