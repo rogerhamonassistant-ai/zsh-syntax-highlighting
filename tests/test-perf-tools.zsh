@@ -296,6 +296,52 @@ else
 fi
 histchars='!^#'
 
+typeset -g saved_bracket_level_1_style=${ZSH_HIGHLIGHT_STYLES[bracket-level-1]}
+BUFFER='print (foo)'
+CURSOR=2
+region_highlight=()
+_zsh_highlight_perf_reset
+true && _zsh_highlight
+ZSH_HIGHLIGHT_STYLES[bracket-level-1]='fg=red,bold'
+CURSOR=3
+region_highlight=()
+true && _zsh_highlight
+if (( ${_ZSH_HIGHLIGHT_PERF_COUNTERS[brackets.cache_reuse_hits]-0} == 0 )); then
+  _ok 'brackets cache invalidates on bracket-level style changes'
+else
+  _not_ok 'brackets cache invalidates on bracket-level style changes' "expected 0 cache reuses, got ${_ZSH_HIGHLIGHT_PERF_COUNTERS[brackets.cache_reuse_hits]-0}"
+fi
+if (( ${_ZSH_HIGHLIGHT_PERF_COUNTERS[brackets.full_scan_calls]-0} == 2 )); then
+  _ok 'brackets reruns a full scan after bracket-level style changes'
+else
+  _not_ok 'brackets reruns a full scan after bracket-level style changes' "expected 2 full scans, got ${_ZSH_HIGHLIGHT_PERF_COUNTERS[brackets.full_scan_calls]-0}"
+fi
+_assert_contains 'brackets replay picks up updated bracket-level styles' "${(j:$'\n':)region_highlight}" 'fg=red,bold'
+ZSH_HIGHLIGHT_STYLES[bracket-level-1]=$saved_bracket_level_1_style
+
+typeset -g saved_bracket_error_style=${ZSH_HIGHLIGHT_STYLES[bracket-error]}
+BUFFER='print )'
+CURSOR=2
+region_highlight=()
+_zsh_highlight_perf_reset
+true && _zsh_highlight
+ZSH_HIGHLIGHT_STYLES[bracket-error]='fg=blue,bold'
+CURSOR=3
+region_highlight=()
+true && _zsh_highlight
+if (( ${_ZSH_HIGHLIGHT_PERF_COUNTERS[brackets.cache_reuse_hits]-0} == 0 )); then
+  _ok 'brackets cache invalidates on bracket-error style changes'
+else
+  _not_ok 'brackets cache invalidates on bracket-error style changes' "expected 0 cache reuses, got ${_ZSH_HIGHLIGHT_PERF_COUNTERS[brackets.cache_reuse_hits]-0}"
+fi
+if (( ${_ZSH_HIGHLIGHT_PERF_COUNTERS[brackets.full_scan_calls]-0} == 2 )); then
+  _ok 'brackets reruns a full scan after bracket-error style changes'
+else
+  _not_ok 'brackets reruns a full scan after bracket-error style changes' "expected 2 full scans, got ${_ZSH_HIGHLIGHT_PERF_COUNTERS[brackets.full_scan_calls]-0}"
+fi
+_assert_contains 'brackets replay picks up updated bracket-error styles' "${(j:$'\n':)region_highlight}" 'fg=blue,bold'
+ZSH_HIGHLIGHT_STYLES[bracket-error]=$saved_bracket_error_style
+
 unsetopt rcquotes
 BUFFER=$'print \'a\'\'b\''
 CURSOR=3

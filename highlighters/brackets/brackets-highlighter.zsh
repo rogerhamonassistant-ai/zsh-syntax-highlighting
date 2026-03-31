@@ -40,6 +40,7 @@
 typeset -g _zsh_highlight_brackets__cache_buffer=''
 typeset -g _zsh_highlight_brackets__cache_rcquotes='off'
 typeset -g _zsh_highlight_brackets__cache_histchars='!^#'
+typeset -g _zsh_highlight_brackets__cache_style_signature=''
 typeset -gi _zsh_highlight_brackets__cache_bracket_color_size=0
 typeset -ga _zsh_highlight_brackets__cache_regions
 typeset -ga _zsh_highlight_brackets__cache_rendered_regions
@@ -54,6 +55,19 @@ _zsh_highlight_brackets__effective_rcquotes_setting()
   else
     REPLY=off
   fi
+}
+
+_zsh_highlight_brackets__style_signature()
+{
+  integer bracket_color_size=$1 level
+  local -a signature_parts
+
+  signature_parts=("bracket-error:${ZSH_HIGHLIGHT_STYLES[bracket-error]-}")
+  for (( level = 1; level <= bracket_color_size; ++level )); do
+    signature_parts+=("bracket-level-$level:${ZSH_HIGHLIGHT_STYLES[bracket-level-$level]-}")
+  done
+
+  REPLY="${(j:$'\x1f':)signature_parts}"
 }
 
 # Whether the brackets highlighter should be called or not.
@@ -87,16 +101,19 @@ _zsh_highlight_highlighter_brackets_predicate()
 
 _zsh_highlight_brackets__cache_valid_p()
 {
-  local rcquotes_setting
+  local rcquotes_setting style_signature
   local histchars_setting=${histchars-'!^#'}
   integer bracket_color_size=$1
 
   _zsh_highlight_brackets__effective_rcquotes_setting
   rcquotes_setting=$REPLY
+  _zsh_highlight_brackets__style_signature $bracket_color_size
+  style_signature=$REPLY
 
   [[ $_zsh_highlight_brackets__cache_buffer == "$BUFFER" ]] &&
   [[ $_zsh_highlight_brackets__cache_rcquotes == "$rcquotes_setting" ]] &&
   [[ $_zsh_highlight_brackets__cache_histchars == "$histchars_setting" ]] &&
+  [[ $_zsh_highlight_brackets__cache_style_signature == "$style_signature" ]] &&
   (( _zsh_highlight_brackets__cache_bracket_color_size == bracket_color_size ))
 }
 
@@ -290,13 +307,15 @@ _zsh_highlight_highlighter_brackets_paint()
   local -i next_shell_code_scope_id=0 next_backtick_scope_id=0
   local -A levelpos lastoflevel matching literal_level literal_levelpos literal_lastoflevel literal_matching
   local -a cache_regions
-  local rcquotes_setting
+  local rcquotes_setting style_signature
   (( _zsh_highlight_perf_trace_enabled )) && {
     _zsh_highlight_perf_count 'brackets.paint_calls'
     _zsh_highlight_perf_count 'brackets.paint_chars' $buflen
   }
   _zsh_highlight_brackets__effective_rcquotes_setting
   rcquotes_setting=$REPLY
+  _zsh_highlight_brackets__style_signature $bracket_color_size
+  style_signature=$REPLY
 
   if _zsh_highlight_brackets__cache_valid_p $bracket_color_size; then
     (( _zsh_highlight_perf_trace_enabled )) && {
@@ -727,6 +746,7 @@ _zsh_highlight_highlighter_brackets_paint()
   _zsh_highlight_brackets__cache_buffer=$BUFFER
   _zsh_highlight_brackets__cache_rcquotes=$rcquotes_setting
   _zsh_highlight_brackets__cache_histchars=${histchars-'!^#'}
+  _zsh_highlight_brackets__cache_style_signature=$style_signature
   _zsh_highlight_brackets__cache_bracket_color_size=$bracket_color_size
   _zsh_highlight_brackets__cache_regions=("${cache_regions[@]}")
   _zsh_highlight_brackets__cache_matching=("${(kv)matching[@]}")
