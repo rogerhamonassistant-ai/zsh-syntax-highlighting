@@ -106,18 +106,19 @@ zshh_perf_setup_runtime "$tool_root" || exit 1
 zshh_perf_validate_highlighters "$tool_root" "${highlighters[@]}" || exit 1
 
 local buffer_label
+local buffer
 local scenario_mode=single
 if [[ -n $scenario ]]; then
   zshh_perf_generate_scenario "$scenario" "$length" || exit 1
+  buffer=$REPLY
   buffer_label=$scenario
   zshh_perf_scenario_run_mode "$scenario"
   scenario_mode=$REPLY
 else
   zshh_perf_load_input "$input_file" || exit 1
+  buffer=$REPLY
   buffer_label=$input_file
 fi
-
-local buffer=$REPLY
 
 zmodload zsh/zprof || _profile_die 'failed to load zsh/zprof'
 zprof -c
@@ -125,9 +126,13 @@ zprof -c
 integer run
 local key
 local -A trace_totals
+integer replay_cursor
 for (( run = 1; run <= iterations; ++run )); do
   if [[ $scenario_mode == cursor-replay ]]; then
-    zshh_perf_run_highlight_cursor_replay "$buffer" "${highlighters[@]}"
+    zshh_perf_prime_highlight_cursor_replay "$buffer" "${highlighters[@]}" || exit 1
+    replay_cursor=$REPLY
+    zprof -c
+    zshh_perf_run_highlight_cursor_replay "$buffer" "$replay_cursor" "${highlighters[@]}"
   else
     zshh_perf_run_highlight "$buffer" "${highlighters[@]}"
   fi

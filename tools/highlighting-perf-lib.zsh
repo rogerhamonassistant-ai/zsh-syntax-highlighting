@@ -199,6 +199,29 @@ zshh_perf_run_highlight() {
   true && _zsh_highlight
 }
 
+zshh_perf_prime_highlight_cursor_replay() {
+  local buffer=$1
+  shift
+  local -a highlighters=("$@")
+  integer prime_cursor target_cursor
+
+  zshh_perf_find_cursor_replay_positions "$buffer" || return 1
+  prime_cursor=${REPLY%%:*}
+  target_cursor=${REPLY#*:}
+
+  ZSH_HIGHLIGHT_HIGHLIGHTERS=("${highlighters[@]}")
+  BUFFER=$buffer
+  PREBUFFER=''
+  region_highlight=()
+
+  CURSOR=$prime_cursor
+  zshh_perf_force_repaint "$buffer"
+  _zsh_highlight_perf_reset
+  true && _zsh_highlight
+
+  REPLY=$target_cursor
+}
+
 zshh_perf_find_cursor_replay_positions() {
   local buffer=$1
   integer pos first_cursor=-1 second_cursor=-1
@@ -226,26 +249,16 @@ zshh_perf_find_cursor_replay_positions() {
 
 zshh_perf_run_highlight_cursor_replay() {
   local buffer=$1
-  shift
+  integer target_cursor=$2
+  shift 2
   local -a highlighters=("$@")
-  integer prime_cursor target_cursor
-
-  zshh_perf_find_cursor_replay_positions "$buffer" || return 1
-  prime_cursor=${REPLY%%:*}
-  target_cursor=${REPLY#*:}
 
   ZSH_HIGHLIGHT_HIGHLIGHTERS=("${highlighters[@]}")
   BUFFER=$buffer
   PREBUFFER=''
   region_highlight=()
 
-  CURSOR=$prime_cursor
-  zshh_perf_force_repaint "$buffer"
-  _zsh_highlight_perf_reset
-  true && _zsh_highlight
-
   CURSOR=$target_cursor
-  region_highlight=()
   _zsh_highlight_perf_reset
   true && _zsh_highlight
 }

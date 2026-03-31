@@ -129,6 +129,7 @@ integer run
 local buffer scenario_label scenario_mode=single
 local -a benchmark_lengths
 local -F start_time end_time elapsed
+integer replay_cursor
 if [[ -n $scenario ]]; then
   benchmark_lengths=("${lengths[@]}")
 else
@@ -149,10 +150,13 @@ for length in "${benchmark_lengths[@]}"; do
   fi
 
   for (( run = 1; run <= runs; ++run )); do
-    start_time=$EPOCHREALTIME
     if [[ $scenario_mode == cursor-replay ]]; then
-      zshh_perf_run_highlight_cursor_replay "$buffer" "${highlighters[@]}"
+      zshh_perf_prime_highlight_cursor_replay "$buffer" "${highlighters[@]}" || exit 1
+      replay_cursor=$REPLY
+      start_time=$EPOCHREALTIME
+      zshh_perf_run_highlight_cursor_replay "$buffer" "$replay_cursor" "${highlighters[@]}"
     else
+      start_time=$EPOCHREALTIME
       zshh_perf_run_highlight "$buffer" "${highlighters[@]}"
     fi
     end_time=$EPOCHREALTIME
