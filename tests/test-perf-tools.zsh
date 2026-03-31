@@ -247,6 +247,42 @@ else
   _not_ok 'brackets trace records rendered region builds on a structural scan' 'counter not incremented'
 fi
 
+typeset -g saved_add_highlight_definition=${functions[_zsh_highlight_add_highlight]}
+functions[_zsh_highlight_add_highlight]='region_highlight+=("$1 $2 $3")'
+BUFFER='override (foo)'
+CURSOR=2
+region_highlight=()
+_zsh_highlight_perf_reset
+true && _zsh_highlight
+CURSOR=3
+region_highlight=()
+true && _zsh_highlight
+if (( ${_ZSH_HIGHLIGHT_PERF_COUNTERS[brackets.cache_reuse_hits]-0} > 0 )); then
+  _ok 'brackets override path still reuses the cached replay payload'
+else
+  _not_ok 'brackets override path still reuses the cached replay payload' 'cache reuse counter not incremented'
+fi
+if (( $#region_highlight > 0 )); then
+  _ok 'brackets override path replays structural regions on cursor-only repaint'
+else
+  _not_ok 'brackets override path replays structural regions on cursor-only repaint' 'region_highlight was empty after replay'
+fi
+functions[_zsh_highlight_add_highlight]=$saved_add_highlight_definition
+
+typeset -g saved_bracket_level_1_for_unset=${ZSH_HIGHLIGHT_STYLES[bracket-level-1]}
+unset 'ZSH_HIGHLIGHT_STYLES[bracket-level-1]'
+BUFFER='unset (foo)'
+CURSOR=0
+region_highlight=()
+_zsh_highlight_perf_reset
+true && _zsh_highlight
+if (( $#region_highlight == 0 )); then
+  _ok 'brackets direct renderer skips unset structural styles'
+else
+  _not_ok 'brackets direct renderer skips unset structural styles' "expected no regions, got ${(qqq)${(j:$' | ':)region_highlight}}"
+fi
+ZSH_HIGHLIGHT_STYLES[bracket-level-1]=$saved_bracket_level_1_for_unset
+
 BUFFER='([{}]) ([{}])'
 CURSOR=0
 region_highlight=()

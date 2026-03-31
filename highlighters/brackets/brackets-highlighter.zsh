@@ -131,6 +131,7 @@ _zsh_highlight_brackets__render_regions()
 
   (( _zsh_highlight_perf_trace_enabled )) && _zsh_highlight_perf_count 'brackets.rendered_region_builds'
   for start end_ style in "$@"; do
+    (( $+ZSH_HIGHLIGHT_STYLES[$style] )) || continue
     rendered_regions[$rendered_index]="$start $end_ ${ZSH_HIGHLIGHT_STYLES[$style]}, memo=zsh-syntax-highlighting"
     (( rendered_index++ ))
   done
@@ -775,7 +776,7 @@ _zsh_highlight_highlighter_brackets_paint()
     for start end_ style in "${cache_regions[@]}"; do
       _zsh_highlight_add_highlight "$start" "$end_" "$style"
     done
-    _zsh_highlight_brackets__cache_rendered_regions=()
+    _zsh_highlight_brackets__cache_rendered_regions=("${region_highlight[@]}")
   fi
   (( _zsh_highlight_perf_trace_enabled )) && _zsh_highlight_perf_count 'brackets.cache_region_count' $(( $#cache_regions / 3 ))
   _zsh_highlight_brackets__apply_cursor_overlay
