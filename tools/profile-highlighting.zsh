@@ -108,6 +108,7 @@ zshh_perf_validate_highlighters "$tool_root" "${highlighters[@]}" || exit 1
 local buffer_label
 local buffer
 local scenario_mode=single
+integer cursor_replay_prime_cursor=-1 cursor_replay_target_cursor=-1
 if [[ -n $scenario ]]; then
   zshh_perf_generate_scenario "$scenario" "$length" || exit 1
   buffer=$REPLY
@@ -127,11 +128,21 @@ integer run
 local key
 local -A trace_totals
 integer replay_cursor
+if [[ $scenario_mode == cursor-replay ]]; then
+  zshh_perf_find_cursor_replay_positions "$buffer" || exit 1
+  cursor_replay_prime_cursor=${REPLY%%:*}
+  cursor_replay_target_cursor=${REPLY#*:}
+  zshh_perf_prime_highlight_cursor_replay "$buffer" "${highlighters[@]}" || exit 1
+  zprof -c
+fi
+
 for (( run = 1; run <= iterations; ++run )); do
   if [[ $scenario_mode == cursor-replay ]]; then
-    zshh_perf_prime_highlight_cursor_replay "$buffer" "${highlighters[@]}" || exit 1
-    replay_cursor=$REPLY
-    zprof -c
+    if (( run % 2 )); then
+      replay_cursor=$cursor_replay_target_cursor
+    else
+      replay_cursor=$cursor_replay_prime_cursor
+    fi
     zshh_perf_run_highlight_cursor_replay "$buffer" "$replay_cursor" "${highlighters[@]}"
   else
     zshh_perf_run_highlight "$buffer" "${highlighters[@]}"

@@ -50,6 +50,15 @@ _assert_not_contains() {
   fi
 }
 
+_assert_grep() {
+  local description=$1 haystack=$2 pattern=$3
+  if print -r -- "$haystack" | grep -Eq -- "$pattern"; then
+    _ok "$description"
+  else
+    _not_ok "$description" "missing pattern ${(qqq)pattern}"
+  fi
+}
+
 _assert_eq() {
   local description=$1 actual=$2 expected=$3
   if [[ $actual == $expected ]]; then
@@ -136,10 +145,11 @@ else
   _not_ok 'profile tool accumulates trace counters across iterations' "unexpected failure: ${(qqq)$(<"$stderr_file")}"
 fi
 
-if "$test_shell" -f "$profile_tool" --highlighters brackets --scenario bracket-cursor-replay --length 4 --iterations 1 --trace >| "$stdout_file" 2>| "$stderr_file"; then
+if "$test_shell" -f "$profile_tool" --highlighters brackets --scenario bracket-cursor-replay --length 4 --iterations 2 --trace >| "$stdout_file" 2>| "$stderr_file"; then
   output=$(<"$stdout_file")
   _assert_not_contains 'profile tool omits structural full scans from replay-only traces' "$output" $'trace\tbrackets.full_scan_calls\t'
-  _assert_contains 'profile tool traces cursor replay cache reuse' "$output" $'trace\tbrackets.cache_reuse_hits\t1'
+  _assert_contains 'profile tool traces cursor replay cache reuse' "$output" $'trace\tbrackets.cache_reuse_hits\t2'
+  _assert_grep 'profile tool keeps zprof samples across replay iterations' "$output" '^[[:space:]]*[0-9]+\)[[:space:]]+2[[:space:]]+.*zshh_perf_run_highlight_cursor_replay$'
 else
   _not_ok 'profile tool runs the bracket cursor replay scenario' "unexpected failure: ${(qqq)$(<"$stderr_file")}"
 fi
