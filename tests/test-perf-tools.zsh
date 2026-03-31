@@ -154,6 +154,14 @@ else
   _not_ok 'profile tool runs the bracket cursor replay scenario' "unexpected failure: ${(qqq)$(<"$stderr_file")}"
 fi
 
+if "$test_shell" -f "$profile_tool" --highlighters brackets --scenario bracket-cursor-replay --length 4 --iterations 1 --trace >| "$stdout_file" 2>| "$stderr_file"; then
+  output=$(<"$stdout_file")
+  _assert_not_contains 'single replay profile omits buffer-modified hits after priming' "$output" $'trace\tbrackets.predicate_buffer_modified_hits\t'
+  _assert_contains 'single replay profile records a cursor-only hit after priming' "$output" $'trace\tbrackets.predicate_cursor_only_hits\t1'
+else
+  _not_ok 'profile tool runs the single-iteration bracket cursor replay scenario' "unexpected failure: ${(qqq)$(<"$stderr_file")}"
+fi
+
 (
   builtin cd -q -- "$repo_root/tests" || exit 1
   if "$test_shell" -f ./test-zprof.zsh brackets >| "$stdout_file" 2>| "$stderr_file"; then
@@ -237,13 +245,15 @@ fi
 BUFFER='([{}]) ([{}])'
 CURSOR=0
 region_highlight=()
+zshh_perf_find_cursor_replay_positions "$BUFFER"
+integer replay_prime_cursor=${REPLY%%:*}
+integer replay_cursor=${REPLY#*:}
 _zsh_highlight_perf_reset
 zshh_perf_prime_highlight_cursor_replay "$BUFFER" brackets
 _assert_eq 'cursor replay prime performs one structural full scan' "${_ZSH_HIGHLIGHT_PERF_COUNTERS[brackets.full_scan_calls]-0}" '1'
 _assert_eq 'cursor replay prime does not claim cache reuse' "${_ZSH_HIGHLIGHT_PERF_COUNTERS[brackets.cache_reuse_hits]-0}" '0'
 _assert_eq 'cursor replay prime records one cursor movement' "${_ZSH_HIGHLIGHT_PERF_COUNTERS[driver.cursor_moved_hits]-0}" '1'
-integer replay_cursor=$REPLY
-zshh_perf_run_highlight_cursor_replay "$BUFFER" "$replay_cursor" brackets
+zshh_perf_run_highlight_cursor_replay "$BUFFER" "$replay_cursor" "$replay_prime_cursor" brackets
 _assert_eq 'cursor replay helper skips a structural full scan on the replay paint' "${_ZSH_HIGHLIGHT_PERF_COUNTERS[brackets.full_scan_calls]-0}" '0'
 _assert_eq 'cursor replay helper records one cache reuse' "${_ZSH_HIGHLIGHT_PERF_COUNTERS[brackets.cache_reuse_hits]-0}" '1'
 _assert_eq 'cursor replay helper records cursor movement' "${_ZSH_HIGHLIGHT_PERF_COUNTERS[driver.cursor_moved_hits]-0}" '1'

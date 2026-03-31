@@ -127,7 +127,7 @@ zprof -c
 integer run
 local key
 local -A trace_totals
-integer replay_cursor
+integer replay_cursor replay_prior_cursor
 if [[ $scenario_mode == cursor-replay ]]; then
   zshh_perf_find_cursor_replay_positions "$buffer" || exit 1
   cursor_replay_prime_cursor=${REPLY%%:*}
@@ -140,10 +140,12 @@ for (( run = 1; run <= iterations; ++run )); do
   if [[ $scenario_mode == cursor-replay ]]; then
     if (( run % 2 )); then
       replay_cursor=$cursor_replay_target_cursor
+      replay_prior_cursor=$cursor_replay_prime_cursor
     else
       replay_cursor=$cursor_replay_prime_cursor
+      replay_prior_cursor=$cursor_replay_target_cursor
     fi
-    zshh_perf_run_highlight_cursor_replay "$buffer" "$replay_cursor" "${highlighters[@]}"
+    zshh_perf_run_highlight_cursor_replay "$buffer" "$replay_cursor" "$replay_prior_cursor" "${highlighters[@]}"
   else
     zshh_perf_run_highlight "$buffer" "${highlighters[@]}"
   fi

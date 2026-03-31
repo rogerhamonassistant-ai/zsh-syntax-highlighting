@@ -250,7 +250,8 @@ zshh_perf_find_cursor_replay_positions() {
 zshh_perf_run_highlight_cursor_replay() {
   local buffer=$1
   integer target_cursor=$2
-  shift 2
+  integer prior_cursor=$3
+  shift 3
   local -a highlighters=("$@")
 
   ZSH_HIGHLIGHT_HIGHLIGHTERS=("${highlighters[@]}")
@@ -258,6 +259,8 @@ zshh_perf_run_highlight_cursor_replay() {
   PREBUFFER=''
   region_highlight=()
 
+  typeset -g _ZSH_HIGHLIGHT_PRIOR_BUFFER=$buffer
+  typeset -gi _ZSH_HIGHLIGHT_PRIOR_CURSOR=$prior_cursor
   CURSOR=$target_cursor
   _zsh_highlight_perf_reset
   true && _zsh_highlight
