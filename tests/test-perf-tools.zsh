@@ -241,6 +241,11 @@ if (( ${_ZSH_HIGHLIGHT_PERF_COUNTERS[brackets.paint_calls]-0} == 2 )); then
 else
   _not_ok 'brackets trace records repeated paint calls' "expected 2, got ${_ZSH_HIGHLIGHT_PERF_COUNTERS[brackets.paint_calls]-0}"
 fi
+if (( ${_ZSH_HIGHLIGHT_PERF_COUNTERS[brackets.rendered_region_builds]-0} > 0 )); then
+  _ok 'brackets trace records rendered region builds on a structural scan'
+else
+  _not_ok 'brackets trace records rendered region builds on a structural scan' 'counter not incremented'
+fi
 
 BUFFER='([{}]) ([{}])'
 CURSOR=0
