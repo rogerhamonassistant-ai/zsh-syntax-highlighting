@@ -7,6 +7,7 @@ typeset -gr repo_root=${0:A:h:h}
 typeset -gr profile_tool=$repo_root/tools/profile-highlighting.zsh
 typeset -gr benchmark_tool=$repo_root/tools/benchmark-highlighting.zsh
 typeset -gr compare_tool=$repo_root/tools/compare-highlighting.zsh
+typeset -gr compare_analysis_tool=$repo_root/tools/compare-highlighting-analysis.py
 typeset -gr zprof_tool=$repo_root/tests/test-zprof.zsh
 typeset -gr test_shell=${${${(z)$(ps -p $$ -o command=)}[1]#-}:-${commands[zsh]:-zsh}}
 
@@ -134,6 +135,33 @@ if "$test_shell" -f "$compare_tool" --baseline "$repo_root" --candidate self="$r
   _assert_contains 'compare tool prints a traced summary row' "$output" $'summary\tself\tbrackets\tbracket-cursor-replay\t4\t1\t'
 else
   _not_ok 'compare tool runs a traced bracketed comparison' "unexpected failure: ${(qqq)$(<"$stderr_file")}"
+fi
+
+typeset -gr analysis_input_file=$temp_dir/compare-analysis.tsv
+cat >| "$analysis_input_file" <<'EOF'
+# summary columns: kind	label	highlighters	scenario	length	run	baseline_before_seconds	candidate_seconds	baseline_after_seconds	bracketed_baseline_mean_seconds	delta_percent	baseline_drift_percent
+summary	candidate	main	synthetic	64	1	1.00	1.03	1.00	1.00	3.00	0.00
+summary	candidate	main	synthetic	64	2	1.00	1.04	1.00	1.00	4.00	0.00
+summary	candidate	main	synthetic	64	3	1.00	0.20	4.00	2.50	-92.00	300.00
+summary	candidate	main	synthetic	64	4	1.00	1.05	1.00	1.00	5.00	0.00
+summary	candidate	main	synthetic	64	5	1.00	1.02	1.00	1.00	2.00	0.00
+EOF
+
+if python3 "$compare_analysis_tool" "$analysis_input_file" >| "$stdout_file" 2>| "$stderr_file"; then
+  output=$(<"$stdout_file")
+  _assert_contains 'compare analysis tool prints a TSV header' "$output" $'label\thighlighters\tscenario\tlength\truns\tkept_runs\tpruned_runs\t'
+  _assert_contains 'compare analysis tool keeps the synthetic group' "$output" $'candidate\tmain\tsynthetic\t64\t5\t4\t1\t'
+  _assert_contains 'compare analysis tool marks a slower verdict after pruning the outlier' "$output" $'\tslower\t'
+  _assert_contains 'compare analysis tool reports the pruning reason' "$output" $'\tdelta:1'
+else
+  _not_ok 'compare analysis tool summarizes synthetic comparison logs' "unexpected failure: ${(qqq)$(<"$stderr_file")}"
+fi
+
+if python3 "$compare_analysis_tool" --max-halfspan-pct 10 "$analysis_input_file" >| "$stdout_file" 2>| "$stderr_file"; then
+  output=$(<"$stdout_file")
+  _assert_contains 'compare analysis tool can hard-prune wide baseline brackets' "$output" $'\tdelta:1,max-halfspan:1'
+else
+  _not_ok 'compare analysis tool can hard-prune wide baseline brackets' "unexpected failure: ${(qqq)$(<"$stderr_file")}"
 fi
 
 if "$test_shell" -f "$benchmark_tool" --highlighters brackets --scenario bracket-cursor-replay --lengths 4 --runs 1 --trace >| "$stdout_file" 2>| "$stderr_file"; then
