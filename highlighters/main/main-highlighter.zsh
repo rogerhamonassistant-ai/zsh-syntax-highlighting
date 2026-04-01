@@ -1068,6 +1068,7 @@ _zsh_highlight_main_highlighter_highlight_list()
   local -a args frame_kind frame_alias_name
   local -a frame_start frame_end frame_pos
   integer frame_depth=0 arg_index raw_cursor=1
+  integer continuation_scan_cursor=1 next_continuation_raw_cursor=0
   # Pattern for parameter names
   readonly parameter_name_pattern='([A-Za-z_][A-Za-z0-9_]*|[0-9]+)'
   list_highlights=()
@@ -1158,6 +1159,14 @@ _zsh_highlight_main_highlighter_highlight_list()
     highlight_glob=false
   fi
 
+  while (( continuation_scan_cursor < len )); do
+    if [[ $buf[continuation_scan_cursor] == '\' && $buf[$(( continuation_scan_cursor + 1 ))] == $'\n' ]]; then
+      next_continuation_raw_cursor=$continuation_scan_cursor
+      break
+    fi
+    (( continuation_scan_cursor++ ))
+  done
+
   while (( frame_depth > 0 )); do
     while (( frame_depth > 0 )) && (( frame_pos[$frame_depth] > frame_end[$frame_depth] )); do
       case ${frame_kind[$frame_depth]} in
@@ -1242,7 +1251,18 @@ _zsh_highlight_main_highlighter_highlight_list()
       done
       integer raw_token_length=$#arg
       (( start_pos = end_pos + offset ))
-      if [[ $buf[raw_cursor,-1] == *$'\\\n'* ]]; then
+      while (( next_continuation_raw_cursor > 0 && next_continuation_raw_cursor < raw_cursor )); do
+        continuation_scan_cursor=$(( next_continuation_raw_cursor + 1 ))
+        next_continuation_raw_cursor=0
+        while (( continuation_scan_cursor < len )); do
+          if [[ $buf[continuation_scan_cursor] == '\' && $buf[$(( continuation_scan_cursor + 1 ))] == $'\n' ]]; then
+            next_continuation_raw_cursor=$continuation_scan_cursor
+            break
+          fi
+          (( continuation_scan_cursor++ ))
+        done
+      done
+      if (( next_continuation_raw_cursor >= raw_cursor && next_continuation_raw_cursor > 0 )); then
         _zsh_highlight_main__raw_token_length "$buf" "$raw_cursor" "$arg"
         (( REPLY > 0 )) && raw_token_length=$REPLY
       fi
