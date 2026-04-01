@@ -2932,7 +2932,7 @@ _zsh_highlight_main_highlighter_highlight_parameter_paren_block()
   integer arg1=$1 i=$1 depth=1 closed=1
   local body_style=$2 delim_style=$3 quote_context=${4:-unquoted}
   local block_delim block_end_delim flag_name
-  local -a saved_reply
+  local -a highlights_accum
   reply=()
 
   while (( ++i <= $#arg )); do
@@ -2968,10 +2968,9 @@ _zsh_highlight_main_highlighter_highlight_parameter_paren_block()
         (( depth == 0 )) && break
         ;;
       '$' | "'" | '"' | '`')
-        saved_reply=($reply)
         if _zsh_highlight_main_highlighter_highlight_nested_construct $i 0 $quote_context; then
           (( i = REPLY ))
-          reply=($saved_reply $reply)
+          highlights_accum+=("${reply[@]}")
           continue
         fi
         ;;
@@ -2984,9 +2983,15 @@ _zsh_highlight_main_highlighter_highlight_parameter_paren_block()
   fi
 
   if (( arg1 < i - closed )); then
-    reply=($(( start_pos + arg1 )) $(( start_pos + i - closed )) $body_style $reply)
+    highlights_accum=(
+      $(( start_pos + arg1 )) $(( start_pos + i - closed )) $body_style
+      "${highlights_accum[@]}"
+    )
   fi
-  reply=($(( start_pos + arg1 - 1 )) $(( start_pos + arg1 )) $delim_style $reply)
+  reply=(
+    $(( start_pos + arg1 - 1 )) $(( start_pos + arg1 )) $delim_style
+    "${highlights_accum[@]}"
+  )
   (( closed )) && reply+=($(( start_pos + i - 1 )) $(( start_pos + i )) $delim_style)
 
   REPLY=$i
@@ -2999,7 +3004,7 @@ _zsh_highlight_main_highlighter_highlight_parameter_modifier()
   local quote_context=${2:-unquoted}
   integer s_index delimiter_hits=0
   local modifier_delim modifier_end_delim
-  local -a saved_reply
+  local -a highlights_accum
   reply=()
 
   if [[ $arg[$(( arg1 + 1 ))] == 's' ]]; then
@@ -3025,10 +3030,9 @@ _zsh_highlight_main_highlighter_highlight_parameter_modifier()
             continue
             ;;
           '$' | "'" | '"' | '`')
-            saved_reply=($reply)
             if _zsh_highlight_main_highlighter_highlight_nested_construct $i 0 $quote_context; then
               (( i = REPLY ))
-              reply=($saved_reply $reply)
+              highlights_accum+=("${reply[@]}")
               (( i++ ))
               continue
             fi
@@ -3044,7 +3048,10 @@ _zsh_highlight_main_highlighter_highlight_parameter_modifier()
         (( i++ ))
       done
       if (( delimiter_hits == 2 )); then
-        reply=($(( start_pos + arg1 - 1 )) $(( start_pos + i )) parameter-expansion-modifier $reply)
+        reply=(
+          $(( start_pos + arg1 - 1 )) $(( start_pos + i )) parameter-expansion-modifier
+          "${highlights_accum[@]}"
+        )
         REPLY=$i
         return 0
       fi
@@ -3062,17 +3069,19 @@ _zsh_highlight_main_highlighter_highlight_parameter_modifier()
         break
         ;;
       '$' | "'" | '"' | '`')
-        saved_reply=($reply)
         if _zsh_highlight_main_highlighter_highlight_nested_construct $i 0 $quote_context; then
           (( i = REPLY ))
-          reply=($saved_reply $reply)
+          highlights_accum+=("${reply[@]}")
           continue
         fi
         ;;
     esac
   done
 
-  reply=($(( start_pos + arg1 - 1 )) $(( start_pos + i )) parameter-expansion-modifier $reply)
+  reply=(
+    $(( start_pos + arg1 - 1 )) $(( start_pos + i )) parameter-expansion-modifier
+    "${highlights_accum[@]}"
+  )
   REPLY=$i
 }
 
@@ -3080,7 +3089,7 @@ _zsh_highlight_main_highlighter_highlight_parameter_subscript()
 {
   integer arg1=$1 i=$1 depth=1 closed=1
   local quote_context=${2:-unquoted}
-  local -a saved_reply nested_reply
+  local -a highlights_accum
   reply=()
 
   while (( ++i <= $#arg )); do
@@ -3093,10 +3102,9 @@ _zsh_highlight_main_highlighter_highlight_parameter_subscript()
         (( depth == 0 )) && break
         ;;
       '$' | "'" | '"' | '`')
-        saved_reply=($reply)
         if _zsh_highlight_main_highlighter_highlight_nested_construct $i 0 $quote_context; then
           (( i = REPLY ))
-          reply=($saved_reply $reply)
+          highlights_accum+=("${reply[@]}")
           continue
         fi
         ;;
@@ -3109,16 +3117,14 @@ _zsh_highlight_main_highlighter_highlight_parameter_subscript()
   fi
 
   if [[ $arg[$(( arg1 + 1 ))] == '(' ]]; then
-    saved_reply=($reply)
     _zsh_highlight_main_highlighter_highlight_parameter_paren_block $(( arg1 + 1 )) parameter-expansion-subscript-flag parameter-expansion-subscript-delimiter $quote_context
-    nested_reply=($reply)
-    reply=($saved_reply $nested_reply)
+    highlights_accum+=("${reply[@]}")
   fi
 
   reply=(
     $(( start_pos + arg1 - 1 )) $(( start_pos + i )) parameter-expansion-subscript
     $(( start_pos + arg1 - 1 )) $(( start_pos + arg1 )) parameter-expansion-subscript-delimiter
-    $reply
+    "${highlights_accum[@]}"
   )
   (( closed )) && reply+=($(( start_pos + i - 1 )) $(( start_pos + i )) parameter-expansion-subscript-delimiter)
 
@@ -3133,7 +3139,7 @@ _zsh_highlight_main_highlighter_highlight_parameter_expansion()
   local parser_state=subject
   integer substring_operator=0
   integer exclusion_start exclusion_end segment_start base_start base_end exclusion_index
-  local -a match mbegin mend saved_reply highlights nested_exclusions base_highlights
+  local -a match mbegin mend highlights nested_exclusions base_highlights
   local MATCH; integer MBEGIN MEND
   reply=()
 
@@ -3222,23 +3228,21 @@ _zsh_highlight_main_highlighter_highlight_parameter_expansion()
           (( i++ ))
           continue
         fi
-        saved_reply=($highlights)
         if _zsh_highlight_main_highlighter_highlight_nested_construct $i 0 $quote_context; then
           if _zsh_highlight_main__reply_needs_outer_style_break; then
             nested_exclusions+=($(( start_pos + i - 1 )) $(( start_pos + REPLY )))
           fi
           (( i = REPLY ))
-          highlights=($saved_reply $reply)
+          highlights+=("${reply[@]}")
           (( i++ ))
           continue
         fi
         ;;
       '[')
         if [[ $parser_state == subject ]]; then
-          saved_reply=($highlights)
           _zsh_highlight_main_highlighter_highlight_parameter_subscript $i $quote_context
           (( i = REPLY ))
-          highlights=($saved_reply $reply)
+          highlights+=("${reply[@]}")
           (( i++ ))
           continue
         fi
@@ -3300,10 +3304,9 @@ _zsh_highlight_main_highlighter_highlight_parameter_expansion()
           fi
         fi
 
-        saved_reply=($highlights)
         _zsh_highlight_main_highlighter_highlight_parameter_modifier $i $quote_context
         (( i = REPLY ))
-        highlights=($saved_reply $reply)
+        highlights+=("${reply[@]}")
         parser_state=modifier
         substring_operator=0
         (( i++ ))
