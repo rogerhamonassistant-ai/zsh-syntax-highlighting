@@ -1211,6 +1211,32 @@ _zsh_highlight_main_highlighter_highlight_list()
       # Stall $next_word.
       (( --in_redirection ))
     fi
+    integer has_start_marker=0
+    integer has_lookup_subject=0
+    integer has_lookup_subject_default_path=0
+    integer has_lookup_subject_pending=0
+    integer has_lookup_subject_pending_default_path=0
+    integer has_precommand_target_builtin=0
+    integer has_precommand_target_external=0
+    integer has_precommand_target_command=0
+    integer has_precommand_target_default_path=0
+    integer has_precommand_name_command=0
+    integer has_env_assign_ok=0
+    integer has_sudo_opt=0
+    integer has_sudo_arg=0
+    [[ $this_word == *':start:'* ]] && has_start_marker=1
+    [[ $this_word == *':lookup_subject:'* ]] && has_lookup_subject=1
+    [[ $this_word == *':lookup_subject_default_path:'* ]] && has_lookup_subject_default_path=1
+    [[ $this_word == *':lookup_subject_pending:'* ]] && has_lookup_subject_pending=1
+    [[ $this_word == *':lookup_subject_pending_default_path:'* ]] && has_lookup_subject_pending_default_path=1
+    [[ $this_word == *':precommand_target_builtin:'* ]] && has_precommand_target_builtin=1
+    [[ $this_word == *':precommand_target_external:'* ]] && has_precommand_target_external=1
+    [[ $this_word == *':precommand_target_command:'* ]] && has_precommand_target_command=1
+    [[ $this_word == *':precommand_target_default_path:'* ]] && has_precommand_target_default_path=1
+    [[ $this_word == *':precommand_name_command:'* ]] && has_precommand_name_command=1
+    [[ $this_word == *':env_assign_ok:'* ]] && has_env_assign_ok=1
+    [[ $this_word == *':sudo_opt:'* ]] && has_sudo_opt=1
+    [[ $this_word == *':sudo_arg:'* ]] && has_sudo_arg=1
 
     # Initialize per-"simple command" [zshmisc(1)] variables:
     #
@@ -1220,7 +1246,7 @@ _zsh_highlight_main_highlighter_highlight_list()
     #   $saw_assignment      boolean flag for "was preceded by an assignment"
     #
     style=unknown-token
-    if [[ $this_word == *':start:'* ]]; then
+    if (( has_start_marker )); then
       in_array_assignment=false
       if [[ $arg == 'noglob' ]]; then
         highlight_glob=false
@@ -1372,37 +1398,37 @@ _zsh_highlight_main_highlighter_highlight_list()
       local lookup_subject_pending_marker=''
       local lookup_subject_pending_default_path_marker=''
       local env_assign_marker=''
-      if [[ $this_word == *':precommand_target_builtin:'* ]]; then
+      if (( has_precommand_target_builtin )); then
         precommand_mode_marker=':precommand_target_builtin:'
-      elif [[ $this_word == *':precommand_target_external:'* ]]; then
+      elif (( has_precommand_target_external )); then
         precommand_mode_marker=':precommand_target_external:'
-      elif [[ $this_word == *':precommand_target_command:'* ]]; then
+      elif (( has_precommand_target_command )); then
         precommand_mode_marker=':precommand_target_command:'
       fi
-      if [[ $this_word == *':precommand_target_default_path:'* ]]; then
+      if (( has_precommand_target_default_path )); then
         default_path_marker=':precommand_target_default_path:'
       fi
-      if [[ $this_word == *':lookup_subject_default_path:'* ]]; then
+      if (( has_lookup_subject_default_path )); then
         lookup_default_path_marker=':lookup_subject_default_path:'
       fi
-      if [[ $this_word == *':precommand_name_command:'* ]]; then
+      if (( has_precommand_name_command )); then
         precommand_name_command_marker=':precommand_name_command:'
       fi
-      if [[ $this_word == *':env_assign_ok:'* ]]; then
+      if (( has_env_assign_ok )); then
         env_assign_marker=':env_assign_ok:'
       fi
-      if [[ $this_word == *':lookup_subject_pending:'* ]]; then
+      if (( has_lookup_subject_pending )); then
         lookup_subject_pending_marker=':lookup_subject_pending:'
       fi
-      if [[ $this_word == *':lookup_subject_pending_default_path:'* ]]; then
+      if (( has_lookup_subject_pending_default_path )); then
         lookup_subject_pending_default_path_marker=':lookup_subject_pending_default_path:'
       fi
-      if [[ $this_word == *':sudo_opt:'* ]]; then
+      if (( has_sudo_opt )); then
         local option_state_prefix=':start:'
-        if [[ $this_word == *':precommand_name_command:'* ]] && [[ $arg == -*[vV]* ]]; then
+        if (( has_precommand_name_command )) && [[ $arg == -*[vV]* ]]; then
           lookup_subject_pending_marker=':lookup_subject_pending:'
         fi
-        if [[ $this_word == *':precommand_name_command:'* ]] && [[ $arg == -*p* ]]; then
+        if (( has_precommand_name_command )) && [[ $arg == -*p* ]]; then
           default_path_marker=':precommand_target_default_path:'
           lookup_subject_pending_default_path_marker=':lookup_subject_pending_default_path:'
           [[ -n $lookup_subject_pending_marker ]] && lookup_default_path_marker=':lookup_subject_default_path:'
@@ -1412,9 +1438,13 @@ _zsh_highlight_main_highlighter_highlight_list()
           if [[ -n $lookup_default_path_marker || -n $lookup_subject_pending_default_path_marker ]]; then
             this_word=':lookup_subject::lookup_subject_default_path:'
             next_word=':lookup_subject::lookup_subject_default_path:'
+            has_lookup_subject=1
+            has_lookup_subject_default_path=1
           else
             this_word=':lookup_subject:'
             next_word=':lookup_subject:'
+            has_lookup_subject=1
+            has_lookup_subject_default_path=0
           fi
         elif [[ -n $flags_with_argument ]] &&
            { 
@@ -1505,7 +1535,7 @@ _zsh_highlight_main_highlighter_highlight_list()
           # non-empty now.)
           this_word=${this_word//:sudo_opt:/}
         fi
-      elif [[ $this_word == *':sudo_arg:'* ]]; then
+      elif (( has_sudo_arg )); then
         next_word+=':sudo_opt:'
         next_word+=':start:'
         next_word+="$precommand_mode_marker"
@@ -1518,25 +1548,25 @@ _zsh_highlight_main_highlighter_highlight_list()
     fi
 
     if (( ! in_redirection )); then
-      if [[ $this_word == *':lookup_subject:'* ]] &&
+      if (( has_lookup_subject )) &&
          [[ -z ${(M)ZSH_HIGHLIGHT_TOKENS_COMMANDSEPARATOR:#"$arg"} ]]
       then
         local lookup_mode=normal lookup_mode_marker=''
-        if [[ $this_word == *':precommand_target_builtin:'* ]]; then
+        if (( has_precommand_target_builtin )); then
           lookup_mode=builtin
           lookup_mode_marker=':precommand_target_builtin:'
-        elif [[ $this_word == *':precommand_target_external:'* ]]; then
+        elif (( has_precommand_target_external )); then
           lookup_mode=external
           lookup_mode_marker=':precommand_target_external:'
-        elif [[ $this_word == *':precommand_target_command:'* ]]; then
+        elif (( has_precommand_target_command )); then
           lookup_mode=command
           lookup_mode_marker=':precommand_target_command:'
         fi
-        if [[ $this_word == *':lookup_subject_default_path:'* ]]; then
+        if (( has_lookup_subject_default_path )); then
           lookup_mode=lookup-default-path
           lookup_mode_marker=':lookup_subject_default_path:'
         fi
-        if [[ $this_word == *':precommand_target_default_path:'* ]]; then
+        if (( has_precommand_target_default_path )); then
           if [[ $lookup_mode == command ]]; then
             lookup_mode=command-default-path
           elif [[ $lookup_mode == external ]]; then
