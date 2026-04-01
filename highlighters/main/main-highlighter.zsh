@@ -243,7 +243,7 @@ _zsh_highlight_main__type() {
     setopt localoptions $options_to_set;
   fi
   unset REPLY
-  if zmodload -e zsh/parameter; then
+  if (( _zsh_highlight_main__has_zsh_parameter_module )); then
     if (( $+aliases[(e)$1] )); then
       may_cache=0
     fi
@@ -330,7 +330,7 @@ _zsh_highlight_main__is_redirection() {
 #
 # The result will be stored in REPLY.
 _zsh_highlight_main__resolve_alias() {
-  if zmodload -e zsh/parameter; then
+  if (( _zsh_highlight_main__has_zsh_parameter_module )); then
     REPLY=${aliases[$arg]}
   else
     REPLY="${"$(alias -- $arg)"#*=}"
@@ -339,7 +339,7 @@ _zsh_highlight_main__resolve_alias() {
 
 # Return true iff $1 is a global alias
 _zsh_highlight_main__is_global_alias() {
-  if zmodload -e zsh/parameter; then
+  if (( _zsh_highlight_main__has_zsh_parameter_module )); then
     (( ${+galiases[$arg]} ))
   elif [[ $arg == '='* ]]; then
     # avoid running into «alias -L '=foo'» erroring out with 'bad assignment'
@@ -357,7 +357,7 @@ _zsh_highlight_main__is_function_name() {
       return 1
       ;;
   esac
-  if zmodload -e zsh/parameter; then
+  if (( _zsh_highlight_main__has_zsh_parameter_module )); then
     (( $reswords[(Ie)$1] )) && return 1
   else
     _zsh_highlight_main__type "$1" 0
@@ -607,7 +607,7 @@ _zsh_highlight_main__precommand_target_mode() {
 
 _zsh_highlight_main__builtin_target_type() {
   unset REPLY
-  if zmodload -e zsh/parameter; then
+  if (( _zsh_highlight_main__has_zsh_parameter_module )); then
     (( $+builtins[(e)$1] )) && REPLY=builtin
   else
     _zsh_highlight_main__type "$1"
@@ -619,7 +619,7 @@ _zsh_highlight_main__builtin_target_type() {
 
 _zsh_highlight_main__external_target_type() {
   unset REPLY
-  if zmodload -e zsh/parameter; then
+  if (( _zsh_highlight_main__has_zsh_parameter_module )); then
     (( $+commands[(e)$1] )) && REPLY=command
   else
     builtin whence -p -- "$1" >/dev/null 2>&1 && REPLY=command
@@ -667,7 +667,7 @@ _zsh_highlight_main__command_target_type() {
 _zsh_highlight_main__lookup_subject_type_default_path() {
   local subject=$1
 
-  if zmodload -e zsh/parameter; then
+  if (( _zsh_highlight_main__has_zsh_parameter_module )); then
     if (( $+builtins[(e)$subject] )); then
       REPLY=builtin
     else
@@ -780,7 +780,7 @@ _zsh_highlight_main__lookup_subject_type() {
       _zsh_highlight_main__lookup_subject_type_default_path "$subject"
       ;;
     (*)
-      if zmodload -e zsh/parameter; then
+      if (( _zsh_highlight_main__has_zsh_parameter_module )); then
         if (( ${+galiases[(e)$subject]} )); then
           REPLY='global alias'
         elif (( $+aliases[(e)$subject] )); then
@@ -4134,6 +4134,14 @@ _zsh_highlight_main_highlighter_expand_path()
 # Main highlighter initialization
 # -------------------------------------------------------------------------------------------------
 
+_zsh_highlight_main__update_has_zsh_parameter_module() {
+  if zmodload -e zsh/parameter; then
+    typeset -g _zsh_highlight_main__has_zsh_parameter_module=1
+  else
+    typeset -g _zsh_highlight_main__has_zsh_parameter_module=0
+  fi
+}
+
 _zsh_highlight_main__precmd_hook() {
   # Unset the WARN_NESTED_VAR option, taking care not to error if the option
   # doesn't exist (zsh older than zsh-5.3.1-test-2).
@@ -4142,8 +4150,12 @@ _zsh_highlight_main__precmd_hook() {
     unsetopt warnnestedvar
   fi
 
+  _zsh_highlight_main__update_has_zsh_parameter_module
   _zsh_highlight_main__command_type_cache=()
 }
+
+typeset -gi _zsh_highlight_main__has_zsh_parameter_module
+_zsh_highlight_main__update_has_zsh_parameter_module
 
 autoload -Uz add-zsh-hook
 if add-zsh-hook precmd _zsh_highlight_main__precmd_hook 2>/dev/null; then
