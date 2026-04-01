@@ -102,14 +102,9 @@ _zsh_highlight_highlighter_brackets_predicate()
 
 _zsh_highlight_brackets__cache_valid_p()
 {
-  local rcquotes_setting style_signature
+  local rcquotes_setting=$2 style_signature=$3
   local histchars_setting=${histchars-'!^#'}
   integer bracket_color_size=$1
-
-  _zsh_highlight_brackets__effective_rcquotes_setting
-  rcquotes_setting=$REPLY
-  _zsh_highlight_brackets__style_signature $bracket_color_size
-  style_signature=$REPLY
 
   [[ $_zsh_highlight_brackets__cache_buffer == "$BUFFER" ]] &&
   [[ $_zsh_highlight_brackets__cache_rcquotes == "$rcquotes_setting" ]] &&
@@ -333,7 +328,7 @@ _zsh_highlight_highlighter_brackets_paint()
   _zsh_highlight_brackets__style_signature $bracket_color_size
   style_signature=$REPLY
 
-  if _zsh_highlight_brackets__cache_valid_p $bracket_color_size; then
+  if _zsh_highlight_brackets__cache_valid_p $bracket_color_size "$rcquotes_setting" "$style_signature"; then
     (( _zsh_highlight_perf_trace_enabled )) && {
       _zsh_highlight_perf_count 'brackets.cache_reuse_hits'
       _zsh_highlight_perf_count 'brackets.cache_region_replays' $(( $#_zsh_highlight_brackets__cache_regions / 3 ))
