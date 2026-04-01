@@ -350,7 +350,7 @@ _zsh_highlight_highlighter_brackets_paint()
   pos=0
   while (( ++pos <= buflen )); do
     char=$BUFFER[$pos]
-    integer shell_code_double_quote_active=0 arithmetic_active=0 backtick_active=0 current_shell_code_scope_id=0 current_backtick_scope_id=0 current_backtick_base_shell_depth=0 current_backtick_double_quote_active=0 nested_shell_code_active=0
+    integer shell_code_double_quote_active=0 arithmetic_active=0 backtick_active=0 current_shell_code_scope_id=0 current_backtick_scope_id=0 current_backtick_base_shell_depth=0 current_backtick_double_quote_active=0 nested_shell_code_active=0 escaped_in_backtick_at_pos=0 escaped_in_backtick_at_pos_known=0
     if (( $#shell_code_double_quote_depths )) && (( shell_code_double_quote_depths[-1] == shell_code_paren_depth )); then
       shell_code_double_quote_active=1
     fi
@@ -372,6 +372,12 @@ _zsh_highlight_highlighter_brackets_paint()
        (( $#backtick_scope_ids == ${arithmetic_scope_backtick_depths[-1]:-0} ))
     then
       arithmetic_active=1
+    fi
+    if (( backtick_active )) && [[ $char == [\"\(\)\[\]\{\}] ]]; then
+      if _zsh_highlight_brackets_is_effectively_escaped_in_backtick $pos; then
+        escaped_in_backtick_at_pos=1
+      fi
+      escaped_in_backtick_at_pos_known=1
     fi
     if (( in_double_quote )) && (( ! nested_shell_code_active )); then
       case $char in
@@ -400,9 +406,7 @@ _zsh_highlight_highlighter_brackets_paint()
         ('"')
           if (( arithmetic_active )); then
             :
-          elif (( backtick_active )) &&
-               _zsh_highlight_brackets_is_effectively_escaped_in_backtick $pos
-          then
+          elif (( backtick_active )) && (( escaped_in_backtick_at_pos )); then
             continue
           elif (( backtick_active )) && (( shell_code_paren_depth > current_backtick_base_shell_depth )); then
             if (( shell_code_double_quote_active )); then
@@ -487,9 +491,7 @@ _zsh_highlight_highlighter_brackets_paint()
       '"')
         if (( arithmetic_active )); then
           :
-        elif (( backtick_active )) &&
-             _zsh_highlight_brackets_is_effectively_escaped_in_backtick $pos
-        then
+        elif (( backtick_active )) && (( escaped_in_backtick_at_pos )); then
           continue
         elif (( backtick_active )); then
           if (( shell_code_paren_depth > current_backtick_base_shell_depth )); then
@@ -607,9 +609,7 @@ _zsh_highlight_highlighter_brackets_paint()
     esac
     case $char in
       ["([{"])
-        if (( backtick_active )) &&
-           _zsh_highlight_brackets_is_effectively_escaped_in_backtick $pos
-        then
+        if (( backtick_active )) && (( escaped_in_backtick_at_pos )); then
           literal_levelpos[$pos]=-1
           continue
         fi
@@ -666,9 +666,7 @@ _zsh_highlight_highlighter_brackets_paint()
         fi
         ;;
       [")]}"])
-        if (( backtick_active )) &&
-           _zsh_highlight_brackets_is_effectively_escaped_in_backtick $pos
-        then
+        if (( backtick_active )) && (( escaped_in_backtick_at_pos )); then
           literal_levelpos[$pos]=-1
           continue
         fi
