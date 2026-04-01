@@ -6,6 +6,7 @@ setopt pipe_fail no_unset warn_create_global
 typeset -gr repo_root=${0:A:h:h}
 typeset -gr profile_tool=$repo_root/tools/profile-highlighting.zsh
 typeset -gr benchmark_tool=$repo_root/tools/benchmark-highlighting.zsh
+typeset -gr compare_tool=$repo_root/tools/compare-highlighting.zsh
 typeset -gr zprof_tool=$repo_root/tests/test-zprof.zsh
 typeset -gr test_shell=${${${(z)$(ps -p $$ -o command=)}[1]#-}:-${commands[zsh]:-zsh}}
 
@@ -113,6 +114,26 @@ if "$test_shell" -f "$benchmark_tool" --highlighters main --scenario option-nest
   _assert_contains 'benchmark tool prints an option nested shell scenario row' "$output" $'main\toption-nested-shell-code\t2\t1'
 else
   _not_ok 'benchmark tool runs the option nested shell scenario' "unexpected failure: ${(qqq)$(<"$stderr_file")}"
+fi
+
+if "$test_shell" -f "$compare_tool" --baseline "$repo_root" --candidate self="$repo_root" --scenario long-pipeline --lengths 2 --runs 1 >| "$stdout_file" 2>| "$stderr_file"; then
+  output=$(<"$stdout_file")
+  _assert_contains 'compare tool prints a baseline-before result row' "$output" $'result\tbaseline-before\tbaseline\tmain\tlong-pipeline\t2\t1\t'
+  _assert_contains 'compare tool prints a candidate result row' "$output" $'result\tcandidate\tself\tmain\tlong-pipeline\t2\t1\t'
+  _assert_contains 'compare tool prints a baseline-after result row' "$output" $'result\tbaseline-after\tbaseline\tmain\tlong-pipeline\t2\t1\t'
+  _assert_contains 'compare tool prints a summary row' "$output" $'summary\tself\tmain\tlong-pipeline\t2\t1\t'
+else
+  _not_ok 'compare tool runs a basic bracketed comparison' "unexpected failure: ${(qqq)$(<"$stderr_file")}"
+fi
+
+if "$test_shell" -f "$compare_tool" --baseline "$repo_root" --candidate self="$repo_root" --highlighters brackets --scenario bracket-cursor-replay --lengths 4 --runs 1 --trace >| "$stdout_file" 2>| "$stderr_file"; then
+  output=$(<"$stdout_file")
+  _assert_contains 'compare tool prefixes baseline trace rows' "$output" $'trace\tbaseline-before\tbaseline\tbrackets\tbracket-cursor-replay\t4\t1\t'
+  _assert_contains 'compare tool prefixes candidate trace rows' "$output" $'trace\tcandidate\tself\tbrackets\tbracket-cursor-replay\t4\t1\t'
+  _assert_contains 'compare tool prefixes baseline-after trace rows' "$output" $'trace\tbaseline-after\tbaseline\tbrackets\tbracket-cursor-replay\t4\t1\t'
+  _assert_contains 'compare tool prints a traced summary row' "$output" $'summary\tself\tbrackets\tbracket-cursor-replay\t4\t1\t'
+else
+  _not_ok 'compare tool runs a traced bracketed comparison' "unexpected failure: ${(qqq)$(<"$stderr_file")}"
 fi
 
 if "$test_shell" -f "$benchmark_tool" --highlighters brackets --scenario bracket-cursor-replay --lengths 4 --runs 1 --trace >| "$stdout_file" 2>| "$stderr_file"; then
