@@ -3967,11 +3967,12 @@ _zsh_highlight_main_highlighter_highlight_backtick()
   # last is the index of arg for the start of the string to be copied into buf.
   #     It is either one past the beginning backtick or one past the last backslash.
   # offset is a count of consumed \ (the delta between buf and arg).
-  # offsets is an array indexed by buf offset of when the delta between buf and arg changes.
-  #     It is sparse, so search backwards to the last value
+  # offset_changes_* records where the delta between buf and arg changes.
   local buf highlight style=back-quoted-argument-unclosed style_end
   local -i arg1=$1 end_ i=$1 last offset=0 start subshell_has_end=0
-  local -a highlight_zone highlights offsets
+  local -a buf_chunks highlight_zone highlights offset_changes_positions offset_changes_values
+  local -A remap_offsets
+  local -i change_index=1 current_offset=0 map_index
   reply=()
   _zsh_highlight_main__perf_count 'main.backtick_calls'
 
@@ -3979,8 +3980,9 @@ _zsh_highlight_main_highlighter_highlight_backtick()
   # Remove one layer of backslashes and find the end
   while i=$arg[(ib:i+1:)[\\\\\`]]; do # find the next \ or `
     if (( i > $#arg )); then
-      buf=$buf$arg[last,i]
-      offsets[i-arg1-offset]='' # So we never index past the end
+      buf_chunks+=("$arg[last,i]")
+      offset_changes_positions+=($(( i - arg1 - offset )))
+      offset_changes_values+=(0) # So we never index past the end
       (( i-- ))
       subshell_has_end=$(( has_end && (start_pos + i == len) ))
       break
@@ -3990,30 +3992,42 @@ _zsh_highlight_main_highlighter_highlight_backtick()
       (( i++ ))
       # POSIX XCU 2.6.3
       if [[ $arg[i] == ('$'|'`'|'\') ]]; then
-        buf=$buf$arg[last,i-2]
+        buf_chunks+=("$arg[last,i-2]")
         (( offset++ ))
-        # offsets is relative to buf, so adjust by -arg1
-        offsets[i-arg1-offset]=$offset
+        # offsets are relative to buf, so adjust by -arg1
+        offset_changes_positions+=($(( i - arg1 - offset )))
+        offset_changes_values+=($offset)
       else
-        buf=$buf$arg[last,i-1]
+        buf_chunks+=("$arg[last,i-1]")
       fi
     else # it's an unquoted ` and this is the end
       style=back-quoted-argument
       style_end=back-quoted-argument-delimiter
-      buf=$buf$arg[last,i-1]
-      offsets[i-arg1-offset]='' # So we never index past the end
+      buf_chunks+=("$arg[last,i-1]")
+      offset_changes_positions+=($(( i - arg1 - offset )))
+      offset_changes_values+=(0) # So we never index past the end
       break
     fi
     last=$i
   done
+  buf="${(j::)buf_chunks}"
 
   _zsh_highlight_main_highlighter_highlight_list 0 '' $subshell_has_end $buf
   _zsh_highlight_main__perf_count 'main.backtick_reparse_bytes' $#buf
 
+  # Build a direct remapping table from stripped-buf offsets to original arg offsets.
+  for (( map_index = 0; map_index <= $#buf; map_index += 1 )); do
+    while (( change_index <= $#offset_changes_positions )) && (( offset_changes_positions[change_index] <= map_index )); do
+      current_offset=$offset_changes_values[change_index]
+      (( change_index += 1 ))
+    done
+    remap_offsets[$map_index]=$current_offset
+  done
+
   # Munge the reply to account for removed backslashes
   for start end_ highlight in $reply; do
-    start=$(( start_pos + arg1 + start + offsets[(Rb:start:)?*] ))
-    end_=$(( start_pos + arg1 + end_ + offsets[(Rb:end_:)?*] ))
+    start=$(( start_pos + arg1 + start + remap_offsets[$start] ))
+    end_=$(( start_pos + arg1 + end_ + remap_offsets[$end_] ))
     highlights+=($start $end_ $highlight)
     if [[ $highlight == back-quoted-argument-unclosed && $style == back-quoted-argument ]]; then
       # An inner backtick command substitution is unclosed, but this level is closed
