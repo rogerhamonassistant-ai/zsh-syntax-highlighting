@@ -10,7 +10,7 @@ typeset -gr tool_shell=${${${(z)$(ps -p $$ -o command=)}[1]#-}:-${commands[zsh]:
 
 _compare_usage() {
   cat <<'EOF'
-usage: tools/compare-highlighting.zsh --baseline DIR --candidate LABEL=DIR [--candidate LABEL=DIR ...] --scenario NAME [--scenario NAME ...] [--highlighters main,brackets] [--lengths 128,256] [--runs N] [--repeat N] [--trace]
+usage: tools/compare-highlighting.zsh --baseline DIR --candidate LABEL=DIR [--candidate LABEL=DIR ...] --scenario NAME [--scenario NAME ...] [--highlighters main,brackets] [--lengths 128,256] [--runs N] [--repeat N] [--rolling-baseline] [--trace]
 
 Run bracketed baseline/candidate comparisons for highlighting benchmarks.
 
@@ -18,6 +18,9 @@ For each scenario, length, and run:
   1. baseline-before
   2. each candidate, repeated N times
   3. baseline-after
+
+With `--rolling-baseline`, each run after the first reuses the prior
+`baseline-after` as its bracket start within the same scenario/length block.
 
 The script prints:
   - result rows prefixed with `result`
@@ -33,7 +36,7 @@ _compare_die() {
 
 typeset baseline_dir= highlighters_arg=main lengths_arg='128,256' trace_flag=
 typeset -a candidate_labels=() candidate_dirs=() scenarios=()
-integer runs=1 repeat_count=1 trace_mode=0
+integer runs=1 repeat_count=1 trace_mode=0 rolling_baseline=0
 
 while (( $# > 0 )); do
   case $1 in
@@ -106,6 +109,9 @@ while (( $# > 0 )); do
       ;;
     (--repeat=*)
       repeat_count=${1#--repeat=}
+      ;;
+    (--rolling-baseline)
+      rolling_baseline=1
       ;;
     (--trace)
       trace_mode=1
@@ -194,6 +200,13 @@ _compare_emit_prefixed_output() {
   REPLY=$result_line
 }
 
+_compare_emit_prefixed_result_line() {
+  local phase=$1 label=$2 run_value=$3 repeat_value=$4 result_line=$5
+  local -a parts=("${(@ps:\t:)result_line}")
+  (( $#parts == 6 )) || _compare_die "malformed result row for $label / $phase: $result_line"
+  print -r -- "result"$'\t'"$phase"$'\t'"$label"$'\t'"$parts[1]"$'\t'"$parts[2]"$'\t'"$parts[3]"$'\t'"$run_value"$'\t'"$repeat_value"$'\t'"$parts[5]"$'\t'"$parts[6]"
+}
+
 _compare_run_once() {
   local phase=$1 label=$2 repo_dir=$3 scenario_name=$4 length_value=$5 run_value=$6 repeat_value=$7
   local -a cmd=("$tool_shell" -f "$repo_dir/$benchmark_tool_name" --highlighters "$highlighters_arg" --scenario "$scenario_name" --lengths "$length_value" --runs 1)
@@ -207,12 +220,21 @@ typeset baseline_before_line baseline_after_line candidate_line
 typeset -a fields
 typeset -F baseline_before_seconds baseline_after_seconds candidate_seconds baseline_mean_seconds delta_percent baseline_drift_percent
 integer repeat
+typeset carried_baseline_line=
 
 for scenario in "${scenarios[@]}"; do
+  carried_baseline_line=
   for length in "${lengths[@]}"; do
+    carried_baseline_line=
     for (( run = 1; run <= runs; ++run )); do
-      _compare_run_once baseline-before baseline "$baseline_dir" "$scenario" "$length" "$run" 0
-      baseline_before_line=$REPLY
+      if (( rolling_baseline && run > 1 )); then
+        [[ -n $carried_baseline_line ]] || _compare_die "missing carried baseline for $scenario / $length / run $run"
+        baseline_before_line=$carried_baseline_line
+        _compare_emit_prefixed_result_line baseline-before-rolling baseline "$run" 0 "$baseline_before_line"
+      else
+        _compare_run_once baseline-before baseline "$baseline_dir" "$scenario" "$length" "$run" 0
+        baseline_before_line=$REPLY
+      fi
       fields=("${(@ps:\t:)baseline_before_line}")
       baseline_before_seconds=${fields[6]}
 
@@ -230,6 +252,7 @@ for scenario in "${scenarios[@]}"; do
 
       _compare_run_once baseline-after baseline "$baseline_dir" "$scenario" "$length" "$run" 0
       baseline_after_line=$REPLY
+      carried_baseline_line=$baseline_after_line
       fields=("${(@ps:\t:)baseline_after_line}")
       baseline_after_seconds=${fields[6]}
 

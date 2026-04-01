@@ -148,6 +148,18 @@ else
   _not_ok 'compare tool supports repeated candidate calls inside one bracket' "unexpected failure: ${(qqq)$(<"$stderr_file")}"
 fi
 
+if "$test_shell" -f "$compare_tool" --baseline "$repo_root" --candidate self="$repo_root" --scenario long-pipeline --lengths 2 --runs 2 --rolling-baseline >| "$stdout_file" 2>| "$stderr_file"; then
+  output=$(<"$stdout_file")
+  integer rolling_fresh_rows=${#${(M)${(@f)output}:#result$'\t'baseline-before$'\t'baseline$'\t'main$'\t'long-pipeline$'\t'2$'\t'*}}
+  integer rolling_carried_rows=${#${(M)${(@f)output}:#result$'\t'baseline-before-rolling$'\t'baseline$'\t'main$'\t'long-pipeline$'\t'2$'\t'2$'\t'0$'\t'*}}
+  integer rolling_summary_rows=${#${(M)${(@f)output}:#summary$'\t'self$'\t'main$'\t'long-pipeline$'\t'2$'\t'*}}
+  _assert_eq 'compare tool emits one fresh baseline-before in rolling mode' "$rolling_fresh_rows" '1'
+  _assert_eq 'compare tool emits a carried baseline-before for the second rolling run' "$rolling_carried_rows" '1'
+  _assert_eq 'compare tool keeps one summary row per rolling run' "$rolling_summary_rows" '2'
+else
+  _not_ok 'compare tool supports rolling baseline reuse' "unexpected failure: ${(qqq)$(<"$stderr_file")}"
+fi
+
 typeset -gr analysis_input_file=$temp_dir/compare-analysis.tsv
 cat >| "$analysis_input_file" <<'EOF'
 # summary columns: kind	label	highlighters	scenario	length	run	baseline_before_seconds	candidate_seconds	baseline_after_seconds	bracketed_baseline_mean_seconds	delta_percent	baseline_drift_percent
