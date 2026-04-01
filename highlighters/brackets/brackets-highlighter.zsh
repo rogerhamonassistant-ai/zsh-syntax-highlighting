@@ -102,14 +102,10 @@ _zsh_highlight_highlighter_brackets_predicate()
 
 _zsh_highlight_brackets__cache_valid_p()
 {
-  local rcquotes_setting style_signature
-  local histchars_setting=${histchars-'!^#'}
-  integer bracket_color_size=$1
-
-  _zsh_highlight_brackets__effective_rcquotes_setting
-  rcquotes_setting=$REPLY
-  _zsh_highlight_brackets__style_signature $bracket_color_size
-  style_signature=$REPLY
+  local rcquotes_setting=$1
+  local histchars_setting=$2
+  local style_signature=$3
+  integer bracket_color_size=$4
 
   [[ $_zsh_highlight_brackets__cache_buffer == "$BUFFER" ]] &&
   [[ $_zsh_highlight_brackets__cache_rcquotes == "$rcquotes_setting" ]] &&
@@ -323,17 +319,18 @@ _zsh_highlight_highlighter_brackets_paint()
   local -i next_shell_code_scope_id=0 next_backtick_scope_id=0
   local -A levelpos lastoflevel matching literal_level literal_levelpos literal_lastoflevel literal_matching
   local -a cache_regions
-  local rcquotes_setting style_signature
+  local rcquotes_setting histchars_setting style_signature
   (( _zsh_highlight_perf_trace_enabled )) && {
     _zsh_highlight_perf_count 'brackets.paint_calls'
     _zsh_highlight_perf_count 'brackets.paint_chars' $buflen
   }
   _zsh_highlight_brackets__effective_rcquotes_setting
   rcquotes_setting=$REPLY
+  histchars_setting=${histchars-'!^#'}
   _zsh_highlight_brackets__style_signature $bracket_color_size
   style_signature=$REPLY
 
-  if _zsh_highlight_brackets__cache_valid_p $bracket_color_size; then
+  if _zsh_highlight_brackets__cache_valid_p "$rcquotes_setting" "$histchars_setting" "$style_signature" "$bracket_color_size"; then
     (( _zsh_highlight_perf_trace_enabled )) && {
       _zsh_highlight_perf_count 'brackets.cache_reuse_hits'
       _zsh_highlight_perf_count 'brackets.cache_region_replays' $(( $#_zsh_highlight_brackets__cache_regions / 3 ))
@@ -761,7 +758,7 @@ _zsh_highlight_highlighter_brackets_paint()
 
   _zsh_highlight_brackets__cache_buffer=$BUFFER
   _zsh_highlight_brackets__cache_rcquotes=$rcquotes_setting
-  _zsh_highlight_brackets__cache_histchars=${histchars-'!^#'}
+  _zsh_highlight_brackets__cache_histchars=$histchars_setting
   _zsh_highlight_brackets__cache_style_signature=$style_signature
   _zsh_highlight_brackets__cache_bracket_color_size=$bracket_color_size
   _zsh_highlight_brackets__cache_regions=("${cache_regions[@]}")
