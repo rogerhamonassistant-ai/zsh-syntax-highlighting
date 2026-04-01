@@ -2,3 +2,4 @@
 .pc/
 docs/all.md
 campaign-docs/
+__pycache__/
