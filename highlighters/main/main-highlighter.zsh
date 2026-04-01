@@ -2932,7 +2932,7 @@ _zsh_highlight_main_highlighter_highlight_parameter_paren_block()
   integer arg1=$1 i=$1 depth=1 closed=1
   local body_style=$2 delim_style=$3 quote_context=${4:-unquoted}
   local block_delim block_end_delim flag_name
-  local -a saved_reply
+  local -a nested_highlights
   reply=()
 
   while (( ++i <= $#arg )); do
@@ -2968,10 +2968,9 @@ _zsh_highlight_main_highlighter_highlight_parameter_paren_block()
         (( depth == 0 )) && break
         ;;
       '$' | "'" | '"' | '`')
-        saved_reply=($reply)
         if _zsh_highlight_main_highlighter_highlight_nested_construct $i 0 $quote_context; then
           (( i = REPLY ))
-          reply=($saved_reply $reply)
+          nested_highlights+=($reply)
           continue
         fi
         ;;
@@ -2984,9 +2983,9 @@ _zsh_highlight_main_highlighter_highlight_parameter_paren_block()
   fi
 
   if (( arg1 < i - closed )); then
-    reply=($(( start_pos + arg1 )) $(( start_pos + i - closed )) $body_style $reply)
+    reply=($(( start_pos + arg1 )) $(( start_pos + i - closed )) $body_style)
   fi
-  reply=($(( start_pos + arg1 - 1 )) $(( start_pos + arg1 )) $delim_style $reply)
+  reply=($(( start_pos + arg1 - 1 )) $(( start_pos + arg1 )) $delim_style $reply $nested_highlights)
   (( closed )) && reply+=($(( start_pos + i - 1 )) $(( start_pos + i )) $delim_style)
 
   REPLY=$i
@@ -2999,7 +2998,7 @@ _zsh_highlight_main_highlighter_highlight_parameter_modifier()
   local quote_context=${2:-unquoted}
   integer s_index delimiter_hits=0
   local modifier_delim modifier_end_delim
-  local -a saved_reply
+  local -a nested_highlights
   reply=()
 
   if [[ $arg[$(( arg1 + 1 ))] == 's' ]]; then
@@ -3025,10 +3024,9 @@ _zsh_highlight_main_highlighter_highlight_parameter_modifier()
             continue
             ;;
           '$' | "'" | '"' | '`')
-            saved_reply=($reply)
             if _zsh_highlight_main_highlighter_highlight_nested_construct $i 0 $quote_context; then
               (( i = REPLY ))
-              reply=($saved_reply $reply)
+              nested_highlights+=($reply)
               (( i++ ))
               continue
             fi
@@ -3062,17 +3060,16 @@ _zsh_highlight_main_highlighter_highlight_parameter_modifier()
         break
         ;;
       '$' | "'" | '"' | '`')
-        saved_reply=($reply)
         if _zsh_highlight_main_highlighter_highlight_nested_construct $i 0 $quote_context; then
           (( i = REPLY ))
-          reply=($saved_reply $reply)
+          nested_highlights+=($reply)
           continue
         fi
         ;;
     esac
   done
 
-  reply=($(( start_pos + arg1 - 1 )) $(( start_pos + i )) parameter-expansion-modifier $reply)
+  reply=($(( start_pos + arg1 - 1 )) $(( start_pos + i )) parameter-expansion-modifier $nested_highlights)
   REPLY=$i
 }
 
@@ -3080,7 +3077,7 @@ _zsh_highlight_main_highlighter_highlight_parameter_subscript()
 {
   integer arg1=$1 i=$1 depth=1 closed=1
   local quote_context=${2:-unquoted}
-  local -a saved_reply nested_reply
+  local -a nested_highlights nested_reply
   reply=()
 
   while (( ++i <= $#arg )); do
@@ -3093,10 +3090,9 @@ _zsh_highlight_main_highlighter_highlight_parameter_subscript()
         (( depth == 0 )) && break
         ;;
       '$' | "'" | '"' | '`')
-        saved_reply=($reply)
         if _zsh_highlight_main_highlighter_highlight_nested_construct $i 0 $quote_context; then
           (( i = REPLY ))
-          reply=($saved_reply $reply)
+          nested_highlights+=($reply)
           continue
         fi
         ;;
@@ -3109,16 +3105,15 @@ _zsh_highlight_main_highlighter_highlight_parameter_subscript()
   fi
 
   if [[ $arg[$(( arg1 + 1 ))] == '(' ]]; then
-    saved_reply=($reply)
     _zsh_highlight_main_highlighter_highlight_parameter_paren_block $(( arg1 + 1 )) parameter-expansion-subscript-flag parameter-expansion-subscript-delimiter $quote_context
     nested_reply=($reply)
-    reply=($saved_reply $nested_reply)
+    nested_highlights+=($nested_reply)
   fi
 
   reply=(
     $(( start_pos + arg1 - 1 )) $(( start_pos + i )) parameter-expansion-subscript
     $(( start_pos + arg1 - 1 )) $(( start_pos + arg1 )) parameter-expansion-subscript-delimiter
-    $reply
+    $nested_highlights
   )
   (( closed )) && reply+=($(( start_pos + i - 1 )) $(( start_pos + i )) parameter-expansion-subscript-delimiter)
 
@@ -3800,7 +3795,7 @@ _zsh_highlight_main_highlighter_highlight_single_quote()
 # Highlight special chars inside double-quoted strings
 _zsh_highlight_main_highlighter_highlight_double_quote()
 {
-  local -a breaks match mbegin mend saved_reply
+  local -a breaks match mbegin mend specials nested_reply
   local MATCH; integer last_break=$(( start_pos + $1 - 1 )) MBEGIN MEND
   local i j k ret style
   reply=()
@@ -3810,26 +3805,26 @@ _zsh_highlight_main_highlighter_highlight_double_quote()
     (( k = j + 1 ))
     case "$arg[$i]" in
       ('"') break;;
-      ('`') saved_reply=($reply)
+      ('`')
             breaks+=( $last_break $(( start_pos + i - 1 )) )
             _zsh_highlight_main_highlighter_highlight_backtick $i
             (( i = REPLY ))
             last_break=$(( start_pos + i ))
-            reply=($saved_reply $reply)
+            nested_reply=($reply)
+            specials+=($nested_reply)
             continue
             ;;
       ('$') style=dollar-double-quoted-argument
-            saved_reply=($reply)
             if _zsh_highlight_main_highlighter_highlight_parameter_expansion $i 1 quoted; then
               if _zsh_highlight_main__reply_needs_outer_style_break; then
                 breaks+=( $last_break $(( start_pos + i - 1 )) )
                 last_break=$(( start_pos + REPLY ))
               fi
               (( i = REPLY ))
-              reply=($saved_reply $reply)
+              nested_reply=($reply)
+              specials+=($nested_reply)
               continue
             fi
-            reply=($saved_reply)
             # Look for an alphanumeric parameter name.
             if [[ ${arg:$i} =~ ^([A-Za-z_][A-Za-z0-9_]*|[0-9]+) ]] ; then
               (( k += $#MATCH )) # highlight the parameter name
@@ -3846,11 +3841,11 @@ _zsh_highlight_main_highlighter_highlight_double_quote()
               (( k += 1 )) # highlight both dollar signs
               (( i += 1 )) # don't consider the second one as introducing another parameter expansion
             elif [[ $arg[i+1] == $'\x28' ]]; then
-              saved_reply=($reply)
               if [[ $arg[i+2] == $'\x28' ]] && _zsh_highlight_main_highlighter_highlight_arithmetic $i; then
                 # Arithmetic expansion
                 (( i = REPLY ))
-                reply=($saved_reply $reply)
+                nested_reply=($reply)
+                specials+=($nested_reply)
                 continue
               fi
 
@@ -3860,7 +3855,8 @@ _zsh_highlight_main_highlighter_highlight_double_quote()
               ret=$?
               (( i = REPLY ))
               last_break=$(( start_pos + i ))
-              reply=($saved_reply $reply)
+              nested_reply=($reply)
+              specials+=($nested_reply)
               continue
             else
               continue
@@ -3886,7 +3882,7 @@ _zsh_highlight_main_highlighter_highlight_double_quote()
       *) continue ;;
 
     esac
-    reply+=($j $k $style)
+    specials+=($j $k $style)
   done
 
   if [[ $arg[i] == '"' ]]; then
@@ -3897,12 +3893,11 @@ _zsh_highlight_main_highlighter_highlight_double_quote()
     style=double-quoted-argument-unclosed
   fi
   (( last_break != start_pos + i )) && breaks+=( $last_break $(( start_pos + i )) )
-  saved_reply=($reply)
   reply=()
   for 1 2 in $breaks; do
     (( $1 != $2 )) && reply+=($1 $2 $style)
   done
-  reply+=($saved_reply)
+  reply+=($specials)
   REPLY=$i
 }
 
@@ -4035,7 +4030,7 @@ _zsh_highlight_main_highlighter_highlight_backtick()
 # Highlight special chars inside arithmetic expansions
 _zsh_highlight_main_highlighter_highlight_arithmetic()
 {
-  local -a saved_reply
+  local -a specials nested_reply
   local style
   integer i j k paren_depth ret
   reply=()
@@ -4064,26 +4059,27 @@ _zsh_highlight_main_highlighter_highlight_arithmetic()
         return 1
         ;;
       '`')
-        saved_reply=($reply)
         _zsh_highlight_main_highlighter_highlight_backtick $i
         (( i = REPLY ))
-        reply=($saved_reply $reply)
+        nested_reply=($reply)
+        specials+=($nested_reply)
         continue
         ;;
       '$' )
         if [[ $arg[i+1] == $'\x28' ]]; then
-          saved_reply=($reply)
           if [[ $arg[i+2] == $'\x28' ]] && _zsh_highlight_main_highlighter_highlight_arithmetic $i; then
             # Arithmetic expansion
             (( i = REPLY ))
-            reply=($saved_reply $reply)
+            nested_reply=($reply)
+            specials+=($nested_reply)
             continue
           fi
 
           (( i += 2 ))
           _zsh_highlight_main__highlight_paren_construct $(( i - 2 )) $i command-substitution-quoted command-substitution-delimiter-quoted command-substitution-delimiter
           (( i = REPLY ))
-          reply=($saved_reply $reply)
+          nested_reply=($reply)
+          specials+=($nested_reply)
           continue
         else
           continue
@@ -4103,7 +4099,7 @@ _zsh_highlight_main_highlighter_highlight_arithmetic()
         ;;
 
     esac
-    reply+=($j $k $style)
+    specials+=($j $k $style)
   done
 
   if [[ $arg[i] != ')' ]]; then
@@ -4111,7 +4107,7 @@ _zsh_highlight_main_highlighter_highlight_arithmetic()
     (( i-- ))
   fi
     style=arithmetic-expansion
-  reply=($(( start_pos + $1 - 1)) $(( start_pos + i )) arithmetic-expansion $reply)
+  reply=($(( start_pos + $1 - 1)) $(( start_pos + i )) arithmetic-expansion $specials)
   REPLY=$i
 }
 
