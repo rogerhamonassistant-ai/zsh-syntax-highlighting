@@ -116,14 +116,6 @@ _zsh_highlight_main__reply_needs_outer_style_break() {
   return 1
 }
 
-_zsh_highlight_main__alias_stack_contains() {
-  local alias_name=$1 active_alias_name
-  for active_alias_name in "${in_alias[@]}"; do
-    [[ $active_alias_name == "$alias_name" ]] && return 0
-  done
-  return 1
-}
-
 # Helper to deal with tokens crossing line boundaries.
 _zsh_highlight_main_add_region_highlight() {
   integer start=$1 end=$2
@@ -1065,6 +1057,7 @@ _zsh_highlight_main_highlighter_highlight_list()
   integer in_param=0
   integer trace_enabled=$_zsh_highlight_perf_trace_enabled
   local -a in_alias match mbegin mend list_highlights
+  local -A in_alias_set
   local -a args frame_kind frame_alias_name
   local -a frame_start frame_end frame_pos
   integer frame_depth=0 arg_index raw_cursor=1
@@ -1162,6 +1155,7 @@ _zsh_highlight_main_highlighter_highlight_list()
     while (( frame_depth > 0 )) && (( frame_pos[$frame_depth] > frame_end[$frame_depth] )); do
       case ${frame_kind[$frame_depth]} in
         (alias)
+          unset "in_alias_set[$frame_alias_name[$frame_depth]]"
           in_alias[-1]=()
           if (( $#in_alias == 0 )); then
             _zsh_highlight_main_add_region_highlight $start_pos $end_pos $alias_style
@@ -1274,7 +1268,7 @@ _zsh_highlight_main_highlighter_highlight_list()
       # Expand aliases.
       # An alias is ineligible for expansion while it's being expanded (see #652/#653).
       local aliases_allowed_for_arg=1
-      _zsh_highlight_main__alias_stack_contains "$arg" && aliases_allowed_for_arg=0
+      (( $+in_alias_set[$arg] )) && aliases_allowed_for_arg=0
       _zsh_highlight_main__type "$arg" "$aliases_allowed_for_arg"
       local res="$REPLY"
       if [[ $res == "alias" ]]; then
@@ -1304,6 +1298,7 @@ _zsh_highlight_main_highlighter_highlight_list()
           alias_style=alias
         fi
         in_alias+=("$arg")
+        in_alias_set[$arg]=1
         (( in_redirection++ )) # Stall this arg
         continue
       else
