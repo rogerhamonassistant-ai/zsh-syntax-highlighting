@@ -1068,6 +1068,7 @@ _zsh_highlight_main_highlighter_highlight_list()
   local -a args frame_kind frame_alias_name
   local -a frame_start frame_end frame_pos
   integer frame_depth=0 arg_index raw_cursor=1
+  integer next_readable_frame_depth=0 next_readable_frame_cached_depth=-1 next_readable_frame_cached_pos=-1
   # Pattern for parameter names
   readonly parameter_name_pattern='([A-Za-z_][A-Za-z0-9_]*|[0-9]+)'
   list_highlights=()
@@ -1170,6 +1171,7 @@ _zsh_highlight_main_highlighter_highlight_list()
           ;;
       esac
       (( frame_depth-- ))
+      next_readable_frame_depth=0
     done
 
     (( frame_depth > 0 )) || break
@@ -1184,23 +1186,35 @@ _zsh_highlight_main_highlighter_highlight_list()
     arg_index=${frame_pos[$frame_depth]}
     arg=${args[arg_index]}
     (( frame_pos[$frame_depth]++ ))
+    next_readable_frame_depth=0
     (( trace_enabled )) && _zsh_highlight_main__perf_count 'main.highlight_list_token_iterations'
     local next_arg=
-    integer peek_depth=$frame_depth peek_index
-    while (( peek_depth > 0 )); do
-      peek_index=${frame_pos[$peek_depth]}
-      if (( peek_index <= frame_end[$peek_depth] )); then
-        next_arg=${args[peek_index]}
-        break
-      fi
-      (( peek_depth-- ))
-    done
+    integer peek_index
+    if (( next_readable_frame_depth == 0 )) ||
+       (( next_readable_frame_cached_depth != frame_depth )) ||
+       (( next_readable_frame_cached_pos != frame_pos[$frame_depth] ))
+    then
+      next_readable_frame_depth=$frame_depth
+      while (( next_readable_frame_depth > 0 )); do
+        peek_index=${frame_pos[$next_readable_frame_depth]}
+        if (( peek_index <= frame_end[$next_readable_frame_depth] )); then
+          break
+        fi
+        (( next_readable_frame_depth-- ))
+      done
+      next_readable_frame_cached_depth=$frame_depth
+      next_readable_frame_cached_pos=${frame_pos[$frame_depth]}
+    fi
+    if (( next_readable_frame_depth > 0 )); then
+      next_arg=${args[frame_pos[$next_readable_frame_depth]]}
+    fi
     if [[ ${zsyh_user_options[bareglobqual]:-on} == on ]] &&
        [[ $next_arg == $'\x29' ]] &&
        _zsh_highlight_main__forms_complete_glob_qualifier "$arg" "$next_arg"
     then
       arg+=$next_arg
-      (( frame_pos[$peek_depth]++ ))
+      (( frame_pos[$next_readable_frame_depth]++ ))
+      next_readable_frame_depth=0
     fi
 
     # Initialize this_word and next_word.
@@ -1298,6 +1312,7 @@ _zsh_highlight_main_highlighter_highlight_list()
         frame_pos[$frame_depth]=$(( $#args - $#alias_args + 1 ))
         frame_kind[$frame_depth]=alias
         frame_alias_name[$frame_depth]=$arg
+        next_readable_frame_depth=0
         (( trace_enabled )) && _zsh_highlight_main__perf_count 'main.alias_frame_push_ops'
         (( trace_enabled )) && _zsh_highlight_main__perf_count 'main.alias_frame_push_args' $#alias_args
         if (( $#in_alias == 0 )); then
@@ -1354,6 +1369,7 @@ _zsh_highlight_main_highlighter_highlight_list()
             frame_pos[$frame_depth]=$(( $#args - $#words + 2 ))
             frame_kind[$frame_depth]=param
             frame_alias_name[$frame_depth]=''
+            next_readable_frame_depth=0
             _zsh_highlight_main__perf_count 'main.param_frame_push_ops'
             _zsh_highlight_main__perf_count 'main.param_frame_push_args' $(( $#words - 1 ))
           fi
@@ -1552,15 +1568,24 @@ _zsh_highlight_main_highlighter_highlight_list()
         continue
       fi
       local next_function_token=''
-      integer function_peek_depth=$frame_depth function_peek_index
-      while (( function_peek_depth > 0 )); do
-        function_peek_index=${frame_pos[$function_peek_depth]}
-        if (( function_peek_index <= frame_end[$function_peek_depth] )); then
-          next_function_token=${args[function_peek_index]}
-          break
-        fi
-        (( function_peek_depth-- ))
-      done
+      if (( next_readable_frame_depth == 0 )) ||
+         (( next_readable_frame_cached_depth != frame_depth )) ||
+         (( next_readable_frame_cached_pos != frame_pos[$frame_depth] ))
+      then
+        next_readable_frame_depth=$frame_depth
+        while (( next_readable_frame_depth > 0 )); do
+          peek_index=${frame_pos[$next_readable_frame_depth]}
+          if (( peek_index <= frame_end[$next_readable_frame_depth] )); then
+            break
+          fi
+          (( next_readable_frame_depth-- ))
+        done
+        next_readable_frame_cached_depth=$frame_depth
+        next_readable_frame_cached_pos=${frame_pos[$frame_depth]}
+      fi
+      if (( next_readable_frame_depth > 0 )); then
+        next_function_token=${args[frame_pos[$next_readable_frame_depth]]}
+      fi
       if [[ $this_word == *':function_header:'* ]]; then
         if [[ $arg == $'\n' ]]; then
           style=commandseparator
