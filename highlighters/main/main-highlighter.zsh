@@ -1185,22 +1185,30 @@ _zsh_highlight_main_highlighter_highlight_list()
     arg=${args[arg_index]}
     (( frame_pos[$frame_depth]++ ))
     (( trace_enabled )) && _zsh_highlight_main__perf_count 'main.highlight_list_token_iterations'
-    local next_arg=
-    integer peek_depth=$frame_depth peek_index
-    while (( peek_depth > 0 )); do
-      peek_index=${frame_pos[$peek_depth]}
-      if (( peek_index <= frame_end[$peek_depth] )); then
-        next_arg=${args[peek_index]}
-        break
-      fi
-      (( peek_depth-- ))
-    done
+    local next_arg=''
+    integer next_arg_peek_depth=0
+    integer next_arg_ready=0
     if [[ ${zsyh_user_options[bareglobqual]:-on} == on ]] &&
-       [[ $next_arg == $'\x29' ]] &&
-       _zsh_highlight_main__forms_complete_glob_qualifier "$arg" "$next_arg"
+       {
+         if (( ! next_arg_ready )); then
+           integer peek_depth=$frame_depth peek_index
+           while (( peek_depth > 0 )); do
+             peek_index=${frame_pos[$peek_depth]}
+             if (( peek_index <= frame_end[$peek_depth] )); then
+               next_arg=${args[peek_index]}
+               next_arg_peek_depth=$peek_depth
+               break
+             fi
+             (( peek_depth-- ))
+           done
+           next_arg_ready=1
+         fi
+         [[ $next_arg == $'\x29' ]] &&
+         _zsh_highlight_main__forms_complete_glob_qualifier "$arg" "$next_arg"
+       }
     then
       arg+=$next_arg
-      (( frame_pos[$peek_depth]++ ))
+      (( frame_pos[$next_arg_peek_depth]++ ))
     fi
 
     # Initialize this_word and next_word.
@@ -1323,7 +1331,24 @@ _zsh_highlight_main_highlighter_highlight_list()
         _zsh_highlight_main_add_region_highlight $start_pos $end_pos redirection
       fi
       continue
-    elif [[ $arg == '{'${~parameter_name_pattern}'}' ]] && _zsh_highlight_main__is_redirection "$next_arg"; then
+    elif [[ $arg == '{'${~parameter_name_pattern}'}' ]] &&
+         {
+           if (( ! next_arg_ready )); then
+             integer peek_depth=$frame_depth peek_index
+             while (( peek_depth > 0 )); do
+               peek_index=${frame_pos[$peek_depth]}
+               if (( peek_index <= frame_end[$peek_depth] )); then
+                 next_arg=${args[peek_index]}
+                 next_arg_peek_depth=$peek_depth
+                 break
+               fi
+               (( peek_depth-- ))
+             done
+             next_arg_ready=1
+           fi
+           _zsh_highlight_main__is_redirection "$next_arg"
+         }
+    then
       # named file descriptor: {foo}>&2
       in_redirection=3
       _zsh_highlight_main_add_region_highlight $start_pos $end_pos named-fd
