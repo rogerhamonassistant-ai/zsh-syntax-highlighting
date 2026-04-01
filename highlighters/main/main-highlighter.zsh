@@ -1064,6 +1064,7 @@ _zsh_highlight_main_highlighter_highlight_list()
   integer len=$#buf
   integer in_param=0
   integer trace_enabled=$_zsh_highlight_perf_trace_enabled
+  local -A glob_qualifier_parse_cache
   local -a in_alias match mbegin mend list_highlights
   local -a args frame_kind frame_alias_name
   local -a frame_start frame_end frame_pos
@@ -1196,11 +1197,21 @@ _zsh_highlight_main_highlighter_highlight_list()
       (( peek_depth-- ))
     done
     if [[ ${zsyh_user_options[bareglobqual]:-on} == on ]] &&
-       [[ $next_arg == $'\x29' ]] &&
-       _zsh_highlight_main__forms_complete_glob_qualifier "$arg" "$next_arg"
+       [[ $next_arg == $'\x29' ]]
     then
-      arg+=$next_arg
-      (( frame_pos[$peek_depth]++ ))
+      local glob_qualifier_candidate="$arg$next_arg"
+      if (( ${+glob_qualifier_parse_cache[$glob_qualifier_candidate]} )); then
+        if (( glob_qualifier_parse_cache[$glob_qualifier_candidate] )); then
+          arg+=$next_arg
+          (( frame_pos[$peek_depth]++ ))
+        fi
+      elif _zsh_highlight_main__forms_complete_glob_qualifier "$arg" "$next_arg"; then
+        glob_qualifier_parse_cache[$glob_qualifier_candidate]=1
+        arg+=$next_arg
+        (( frame_pos[$peek_depth]++ ))
+      else
+        glob_qualifier_parse_cache[$glob_qualifier_candidate]=0
+      fi
     fi
 
     # Initialize this_word and next_word.
