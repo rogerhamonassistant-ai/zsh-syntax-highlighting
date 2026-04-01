@@ -320,7 +320,7 @@ _zsh_highlight_highlighter_brackets_paint()
   local char literal_key prev_char
   local -i bracket_color_size=${#ZSH_HIGHLIGHT_STYLES[(I)bracket-level-*]} buflen=${#BUFFER} level=0 matchingpos pos in_double_quote=0 shell_code_paren_depth=0 pending_command_substitution=0 pending_arithmetic_parens=0
   local -a shell_code_double_quote_depths shell_code_scope_ids shell_code_scope_base_depths arithmetic_group_depths arithmetic_close_pending_depths arithmetic_scope_shell_depths arithmetic_scope_backtick_depths backtick_scope_ids backtick_base_shell_depths backtick_double_quote_states
-  local -i next_shell_code_scope_id=0 next_backtick_scope_id=0
+  local -i next_shell_code_scope_id=0 next_backtick_scope_id=0 shell_code_double_quote_depths_top=0 backtick_stack_top=0 arithmetic_stack_top=0
   local -A levelpos lastoflevel matching literal_level literal_levelpos literal_lastoflevel literal_matching
   local -a cache_regions
   local rcquotes_setting style_signature
@@ -351,14 +351,14 @@ _zsh_highlight_highlighter_brackets_paint()
   while (( ++pos <= buflen )); do
     char=$BUFFER[$pos]
     integer shell_code_double_quote_active=0 arithmetic_active=0 backtick_active=0 current_shell_code_scope_id=0 current_backtick_scope_id=0 current_backtick_base_shell_depth=0 current_backtick_double_quote_active=0 nested_shell_code_active=0
-    if (( $#shell_code_double_quote_depths )) && (( shell_code_double_quote_depths[-1] == shell_code_paren_depth )); then
+    if (( shell_code_double_quote_depths_top > 0 )) && (( shell_code_double_quote_depths[shell_code_double_quote_depths_top] == shell_code_paren_depth )); then
       shell_code_double_quote_active=1
     fi
-    if (( $#backtick_scope_ids )); then
+    if (( backtick_stack_top > 0 )); then
       backtick_active=1
-      current_backtick_scope_id=$backtick_scope_ids[-1]
-      current_backtick_base_shell_depth=$backtick_base_shell_depths[-1]
-      current_backtick_double_quote_active=$backtick_double_quote_states[-1]
+      current_backtick_scope_id=$backtick_scope_ids[backtick_stack_top]
+      current_backtick_base_shell_depth=$backtick_base_shell_depths[backtick_stack_top]
+      current_backtick_double_quote_active=$backtick_double_quote_states[backtick_stack_top]
     fi
     if (( shell_code_paren_depth > 0 )) &&
        ( (( ! backtick_active )) || (( shell_code_paren_depth > current_backtick_base_shell_depth )) )
@@ -366,10 +366,10 @@ _zsh_highlight_highlighter_brackets_paint()
       nested_shell_code_active=1
     fi
     (( $#shell_code_scope_ids )) && current_shell_code_scope_id=$shell_code_scope_ids[-1]
-    (( $#backtick_scope_ids )) && current_backtick_scope_id=$backtick_scope_ids[-1]
-    if (( $#arithmetic_group_depths )) &&
-       (( $#shell_code_scope_ids == ${arithmetic_scope_shell_depths[-1]:-0} )) &&
-       (( $#backtick_scope_ids == ${arithmetic_scope_backtick_depths[-1]:-0} ))
+    (( backtick_stack_top > 0 )) && current_backtick_scope_id=$backtick_scope_ids[backtick_stack_top]
+    if (( arithmetic_stack_top > 0 )) &&
+       (( $#shell_code_scope_ids == ${arithmetic_scope_shell_depths[arithmetic_stack_top]:-0} )) &&
+       (( backtick_stack_top == ${arithmetic_scope_backtick_depths[arithmetic_stack_top]:-0} ))
     then
       arithmetic_active=1
     fi
@@ -406,19 +406,23 @@ _zsh_highlight_highlighter_brackets_paint()
             continue
           elif (( backtick_active )) && (( shell_code_paren_depth > current_backtick_base_shell_depth )); then
             if (( shell_code_double_quote_active )); then
-              shell_code_double_quote_depths=("${shell_code_double_quote_depths[1,-2]}")
+              unset "shell_code_double_quote_depths[shell_code_double_quote_depths_top]"
+              (( shell_code_double_quote_depths_top-- ))
             else
-              shell_code_double_quote_depths+=($shell_code_paren_depth)
+              (( shell_code_double_quote_depths_top++ ))
+              shell_code_double_quote_depths[shell_code_double_quote_depths_top]=$shell_code_paren_depth
             fi
           elif (( backtick_active )); then
-            backtick_double_quote_states[-1]=$(( ! current_backtick_double_quote_active ))
+            backtick_double_quote_states[backtick_stack_top]=$(( ! current_backtick_double_quote_active ))
           elif (( shell_code_paren_depth == 0 )); then
             in_double_quote=0
           elif (( ! backtick_active )); then
             if (( shell_code_double_quote_active )); then
-              shell_code_double_quote_depths=("${shell_code_double_quote_depths[1,-2]}")
+              unset "shell_code_double_quote_depths[shell_code_double_quote_depths_top]"
+              (( shell_code_double_quote_depths_top-- ))
             else
-              shell_code_double_quote_depths+=($shell_code_paren_depth)
+              (( shell_code_double_quote_depths_top++ ))
+              shell_code_double_quote_depths[shell_code_double_quote_depths_top]=$shell_code_paren_depth
             fi
           fi
           continue
@@ -444,19 +448,15 @@ _zsh_highlight_highlighter_brackets_paint()
           ;;
         ('`')
           if (( backtick_active )) && (( shell_code_paren_depth == current_backtick_base_shell_depth )); then
-            if (( $#backtick_scope_ids > 1 )); then
-              backtick_scope_ids=("${backtick_scope_ids[1,-2]}")
-              backtick_base_shell_depths=("${backtick_base_shell_depths[1,-2]}")
-              backtick_double_quote_states=("${backtick_double_quote_states[1,-2]}")
-            else
-              backtick_scope_ids=()
-              backtick_base_shell_depths=()
-              backtick_double_quote_states=()
-            fi
+            unset "backtick_scope_ids[backtick_stack_top]"
+            unset "backtick_base_shell_depths[backtick_stack_top]"
+            unset "backtick_double_quote_states[backtick_stack_top]"
+            (( backtick_stack_top-- ))
           else
-            backtick_scope_ids+=( $(( ++next_backtick_scope_id )) )
-            backtick_base_shell_depths+=($shell_code_paren_depth)
-            backtick_double_quote_states+=(0)
+            (( backtick_stack_top++ ))
+            backtick_scope_ids[backtick_stack_top]=$(( ++next_backtick_scope_id ))
+            backtick_base_shell_depths[backtick_stack_top]=$shell_code_paren_depth
+            backtick_double_quote_states[backtick_stack_top]=0
           fi
           continue
           ;;
@@ -494,18 +494,22 @@ _zsh_highlight_highlighter_brackets_paint()
         elif (( backtick_active )); then
           if (( shell_code_paren_depth > current_backtick_base_shell_depth )); then
             if (( shell_code_double_quote_active )); then
-              shell_code_double_quote_depths=("${shell_code_double_quote_depths[1,-2]}")
+              unset "shell_code_double_quote_depths[shell_code_double_quote_depths_top]"
+              (( shell_code_double_quote_depths_top-- ))
             else
-              shell_code_double_quote_depths+=($shell_code_paren_depth)
+              (( shell_code_double_quote_depths_top++ ))
+              shell_code_double_quote_depths[shell_code_double_quote_depths_top]=$shell_code_paren_depth
             fi
           else
-            backtick_double_quote_states[-1]=$(( ! current_backtick_double_quote_active ))
+            backtick_double_quote_states[backtick_stack_top]=$(( ! current_backtick_double_quote_active ))
           fi
         elif (( shell_code_paren_depth > 0 )); then
           if (( shell_code_double_quote_active )); then
-            shell_code_double_quote_depths=("${shell_code_double_quote_depths[1,-2]}")
+            unset "shell_code_double_quote_depths[shell_code_double_quote_depths_top]"
+            (( shell_code_double_quote_depths_top-- ))
           else
-            shell_code_double_quote_depths+=($shell_code_paren_depth)
+            (( shell_code_double_quote_depths_top++ ))
+            shell_code_double_quote_depths[shell_code_double_quote_depths_top]=$shell_code_paren_depth
           fi
         else
           in_double_quote=1
@@ -588,19 +592,15 @@ _zsh_highlight_highlighter_brackets_paint()
         ;;
       '`')
         if (( backtick_active )) && (( shell_code_paren_depth == current_backtick_base_shell_depth )); then
-          if (( $#backtick_scope_ids > 1 )); then
-            backtick_scope_ids=("${backtick_scope_ids[1,-2]}")
-            backtick_base_shell_depths=("${backtick_base_shell_depths[1,-2]}")
-            backtick_double_quote_states=("${backtick_double_quote_states[1,-2]}")
-          else
-            backtick_scope_ids=()
-            backtick_base_shell_depths=()
-            backtick_double_quote_states=()
-          fi
+          unset "backtick_scope_ids[backtick_stack_top]"
+          unset "backtick_base_shell_depths[backtick_stack_top]"
+          unset "backtick_double_quote_states[backtick_stack_top]"
+          (( backtick_stack_top-- ))
         else
-          backtick_scope_ids+=( $(( ++next_backtick_scope_id )) )
-          backtick_base_shell_depths+=($shell_code_paren_depth)
-          backtick_double_quote_states+=(0)
+          (( backtick_stack_top++ ))
+          backtick_scope_ids[backtick_stack_top]=$(( ++next_backtick_scope_id ))
+          backtick_base_shell_depths[backtick_stack_top]=$shell_code_paren_depth
+          backtick_double_quote_states[backtick_stack_top]=0
         fi
         continue
         ;;
@@ -648,10 +648,11 @@ _zsh_highlight_highlighter_brackets_paint()
               arithmetic_group_depths+=(0)
               arithmetic_close_pending_depths+=(0)
               arithmetic_scope_shell_depths+=($#shell_code_scope_ids)
-              arithmetic_scope_backtick_depths+=($#backtick_scope_ids)
+              arithmetic_scope_backtick_depths+=($backtick_stack_top)
+              arithmetic_stack_top=$#arithmetic_group_depths
             fi
           elif (( arithmetic_active )) && [[ $char == '(' ]]; then
-            (( arithmetic_group_depths[-1]++ ))
+            (( arithmetic_group_depths[arithmetic_stack_top]++ ))
           fi
           if (( pending_command_substitution )) && [[ $char == '(' ]]; then
             (( shell_code_paren_depth++ ))
@@ -725,16 +726,17 @@ _zsh_highlight_highlighter_brackets_paint()
           fi
           (( shell_code_paren_depth-- ))
         fi
-        if [[ $char == ')' ]] && (( pending_arithmetic_parens == 0 )) && (( $#arithmetic_group_depths )); then
-          if (( arithmetic_close_pending_depths[-1] )); then
-            arithmetic_group_depths=("${arithmetic_group_depths[1,-2]}")
-            arithmetic_close_pending_depths=("${arithmetic_close_pending_depths[1,-2]}")
-            arithmetic_scope_shell_depths=("${arithmetic_scope_shell_depths[1,-2]}")
-            arithmetic_scope_backtick_depths=("${arithmetic_scope_backtick_depths[1,-2]}")
-          elif (( arithmetic_group_depths[-1] > 0 )); then
-            (( arithmetic_group_depths[-1]-- ))
+        if [[ $char == ')' ]] && (( pending_arithmetic_parens == 0 )) && (( arithmetic_stack_top > 0 )); then
+          if (( arithmetic_close_pending_depths[arithmetic_stack_top] )); then
+            unset "arithmetic_group_depths[arithmetic_stack_top]"
+            unset "arithmetic_close_pending_depths[arithmetic_stack_top]"
+            unset "arithmetic_scope_shell_depths[arithmetic_stack_top]"
+            unset "arithmetic_scope_backtick_depths[arithmetic_stack_top]"
+            (( arithmetic_stack_top-- ))
+          elif (( arithmetic_group_depths[arithmetic_stack_top] > 0 )); then
+            (( arithmetic_group_depths[arithmetic_stack_top]-- ))
           elif [[ ${BUFFER[$(( pos + 1 ))]:-} == ')' ]]; then
-            arithmetic_close_pending_depths[-1]=1
+            arithmetic_close_pending_depths[arithmetic_stack_top]=1
           fi
         fi
         ;;
