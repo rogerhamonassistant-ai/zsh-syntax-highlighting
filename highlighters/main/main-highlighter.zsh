@@ -1308,8 +1308,15 @@ _zsh_highlight_main_highlighter_highlight_list()
         continue
       else
         _zsh_highlight_main_highlighter_expand_path $arg
-        _zsh_highlight_main__type "$REPLY" 0
-        res="$REPLY"
+        local expanded_arg="$REPLY"
+        if [[ "$expanded_arg" == "$arg" && "$aliases_allowed_for_arg" -eq 0 ]]; then
+          # The lookup subject did not change, and aliases were already excluded.
+          # Reuse the previous classification instead of calling _type() again.
+          :
+        else
+          _zsh_highlight_main__type "$expanded_arg" 0
+          res="$REPLY"
+        fi
       fi
     fi
 
