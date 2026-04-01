@@ -1068,6 +1068,7 @@ _zsh_highlight_main_highlighter_highlight_list()
   local -a args frame_kind frame_alias_name
   local -a frame_start frame_end frame_pos
   integer frame_depth=0 arg_index raw_cursor=1
+  integer has_escaped_newline=0 next_escaped_newline=0 escaped_newline_scan_cursor=1
   # Pattern for parameter names
   readonly parameter_name_pattern='([A-Za-z_][A-Za-z0-9_]*|[0-9]+)'
   list_highlights=()
@@ -1141,6 +1142,17 @@ _zsh_highlight_main_highlighter_highlight_list()
     args=(${(zZ+c+)buf})
   else
     args=(${(z)buf})
+  fi
+  if [[ $buf == *$'\\\n'* ]]; then
+    has_escaped_newline=1
+    while (( escaped_newline_scan_cursor < len )); do
+      if [[ $buf[escaped_newline_scan_cursor] == '\' &&
+            $buf[$(( escaped_newline_scan_cursor + 1 ))] == $'\n' ]]; then
+        next_escaped_newline=$escaped_newline_scan_cursor
+        break
+      fi
+      (( escaped_newline_scan_cursor++ ))
+    done
   fi
   (( trace_enabled )) && _zsh_highlight_main__perf_count 'main.highlight_list_token_count' $#args
   if (( $#args )); then
@@ -1242,7 +1254,7 @@ _zsh_highlight_main_highlighter_highlight_list()
       done
       integer raw_token_length=$#arg
       (( start_pos = end_pos + offset ))
-      if [[ $buf[raw_cursor,-1] == *$'\\\n'* ]]; then
+      if (( has_escaped_newline && next_escaped_newline > 0 && raw_cursor <= next_escaped_newline )); then
         _zsh_highlight_main__raw_token_length "$buf" "$raw_cursor" "$arg"
         (( REPLY > 0 )) && raw_token_length=$REPLY
       fi
@@ -1253,6 +1265,18 @@ _zsh_highlight_main_highlighter_highlight_list()
       # make later processing simpler.
       [[ $arg == ';' && $buf[raw_cursor] == $'\n' ]] && arg=$'\n'
       (( raw_cursor += raw_token_length ))
+      while (( has_escaped_newline && next_escaped_newline > 0 && raw_cursor > next_escaped_newline )); do
+        escaped_newline_scan_cursor=$(( next_escaped_newline + 2 ))
+        next_escaped_newline=0
+        while (( escaped_newline_scan_cursor < len )); do
+          if [[ $buf[escaped_newline_scan_cursor] == '\' &&
+                $buf[$(( escaped_newline_scan_cursor + 1 ))] == $'\n' ]]; then
+            next_escaped_newline=$escaped_newline_scan_cursor
+            break
+          fi
+          (( escaped_newline_scan_cursor++ ))
+        done
+      done
     fi
 
     # Handle the INTERACTIVE_COMMENTS option.
