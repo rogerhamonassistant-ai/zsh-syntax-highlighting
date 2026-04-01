@@ -75,3 +75,12 @@ The current fork delta is concentrated in three areas:
 - `highlighters/brackets/`
   - parser and quoted-region changes in the `brackets` highlighter
   - a large body of focused `brackets` highlighter regression fixtures
+
+Compatibility Notes
+-------------------
+
+- Some fork-specific performance work uses `shift -p` for constant-time
+  tail pops on stack-like arrays.
+- `shift -p` was introduced in zsh `5.0.6`.
+- When evaluating or carrying such work in this fork, treat zsh `5.0.6+` as
+  the minimum version for that specific optimization path.
