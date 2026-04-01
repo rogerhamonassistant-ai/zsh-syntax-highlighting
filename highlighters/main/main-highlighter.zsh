@@ -223,16 +223,11 @@ _zsh_highlight_main_calculate_fallback() {
 # The result will be stored in REPLY.
 _zsh_highlight_main__type() {
   integer -r aliases_allowed=${2-1}
-  # We won't cache replies of anything that exists as an alias at all, to
-  # ensure the cached value is correct regardless of $aliases_allowed.
-  #
-  # ### We probably _should_ cache them in a cache that's keyed on the value of
-  # ### $aliases_allowed, on the assumption that aliases are the common case.
-  integer may_cache=1
+  local subject=$1 cache_key="${aliases_allowed}:${#subject}:$subject"
 
   # Cache lookup
   if (( $+_zsh_highlight_main__command_type_cache )); then
-    REPLY=$_zsh_highlight_main__command_type_cache[(e)$1]
+    REPLY=$_zsh_highlight_main__command_type_cache[$cache_key]
     if [[ -n "$REPLY" ]]; then
       return
     fi
@@ -244,22 +239,19 @@ _zsh_highlight_main__type() {
   fi
   unset REPLY
   if zmodload -e zsh/parameter; then
-    if (( $+aliases[(e)$1] )); then
-      may_cache=0
-    fi
-    if (( ${+galiases[(e)$1]} )) && (( aliases_allowed )); then
+    if (( ${+galiases[(e)$subject]} )) && (( aliases_allowed )); then
       REPLY='global alias'
-    elif (( $+aliases[(e)$1] )) && (( aliases_allowed )); then
+    elif (( $+aliases[(e)$subject] )) && (( aliases_allowed )); then
       REPLY=alias
-    elif [[ $1 == *.* && -n ${1%.*} ]] && (( $+saliases[(e)${1##*.}] )); then
+    elif [[ $subject == *.* && -n ${subject%.*} ]] && (( $+saliases[(e)${subject##*.}] )); then
       REPLY='suffix alias'
-    elif (( $reswords[(Ie)$1] )); then
+    elif (( $reswords[(Ie)$subject] )); then
       REPLY=reserved
-    elif (( $+functions[(e)$1] )); then
+    elif (( $+functions[(e)$subject] )); then
       REPLY=function
-    elif (( $+builtins[(e)$1] )); then
+    elif (( $+builtins[(e)$subject] )); then
       REPLY=builtin
-    elif (( $+commands[(e)$1] )); then
+    elif (( $+commands[(e)$subject] )); then
       REPLY=command
     # None of the special hashes had a match, so fall back to 'type -w', for
     # forward compatibility with future versions of zsh that may add new command
@@ -271,10 +263,10 @@ _zsh_highlight_main__type() {
     # falling through to the $() below, incurring a fork.  (Issue #354.)
     #
     # The first disjunct mimics the isrelative() C call from the zsh bug.
-    elif {  [[ $1 != */* ]] || is-at-least 5.3 } &&
+    elif {  [[ $subject != */* ]] || is-at-least 5.3 } &&
          # Add a subshell to avoid a zsh upstream bug; see issue #606.
          # ### Remove the subshell when we stop supporting zsh 5.7.1 (I assume 5.8 will have the bugfix).
-         ! (builtin type -w -- "$1") >/dev/null 2>&1; then
+         ! (builtin type -w -- "$subject") >/dev/null 2>&1; then
       REPLY=none
     fi
   fi
@@ -289,15 +281,12 @@ _zsh_highlight_main__type() {
     # starts with an arithmetic expression [«((…))» as the first thing inside
     # «$(…)»], which is area that has had some parsing bugs before 5.6
     # (approximately).
-    REPLY="${$(:; (( aliases_allowed )) || unalias -- "$1" 2>/dev/null; LC_ALL=C builtin type -w -- "$1" 2>/dev/null)##*: }"
-    if [[ $REPLY == 'alias' ]]; then
-      may_cache=0
-    fi
+    REPLY="${$(:; (( aliases_allowed )) || unalias -- "$subject" 2>/dev/null; LC_ALL=C builtin type -w -- "$subject" 2>/dev/null)##*: }"
   fi
 
   # Cache population
-  if (( may_cache )) && (( $+_zsh_highlight_main__command_type_cache )); then
-    _zsh_highlight_main__command_type_cache[(e)$1]=$REPLY
+  if (( $+_zsh_highlight_main__command_type_cache )); then
+    _zsh_highlight_main__command_type_cache[$cache_key]=$REPLY
   fi
   [[ -n $REPLY ]]
   return $?
