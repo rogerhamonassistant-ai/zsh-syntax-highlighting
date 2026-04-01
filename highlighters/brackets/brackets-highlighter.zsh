@@ -126,16 +126,15 @@ _zsh_highlight_brackets__replay_cached_regions()
 _zsh_highlight_brackets__render_regions()
 {
   integer rendered_index=1
-  local -a rendered_regions
   local start end_ style
 
+  reply=()
   (( _zsh_highlight_perf_trace_enabled )) && _zsh_highlight_perf_count 'brackets.rendered_region_builds'
   for start end_ style in "$@"; do
     (( $+ZSH_HIGHLIGHT_STYLES[$style] )) || continue
-    rendered_regions[$rendered_index]="$start $end_ ${ZSH_HIGHLIGHT_STYLES[$style]}, memo=zsh-syntax-highlighting"
+    reply[$rendered_index]="$start $end_ ${ZSH_HIGHLIGHT_STYLES[$style]}, memo=zsh-syntax-highlighting"
     (( rendered_index++ ))
   done
-  reply=("${rendered_regions[@]}")
 }
 
 _zsh_highlight_brackets__apply_cursor_overlay()
@@ -768,12 +767,12 @@ _zsh_highlight_highlighter_brackets_paint()
   _zsh_highlight_brackets__cache_matching=("${(kv)matching[@]}")
   if [[ ${functions_source[_zsh_highlight_add_highlight]-} == "$_zsh_highlight_brackets__native_add_highlight_source" ]]; then
     local -a reply
-    _zsh_highlight_brackets__render_regions "${cache_regions[@]}"
-    region_highlight=("${reply[@]}")
+    _zsh_highlight_brackets__render_regions "${_zsh_highlight_brackets__cache_regions[@]}"
     _zsh_highlight_brackets__cache_rendered_regions=("${reply[@]}")
+    _zsh_highlight_brackets__replay_cached_regions
   else
     local start end_ style
-    for start end_ style in "${cache_regions[@]}"; do
+    for start end_ style in "${_zsh_highlight_brackets__cache_regions[@]}"; do
       _zsh_highlight_add_highlight "$start" "$end_" "$style"
     done
     _zsh_highlight_brackets__cache_rendered_regions=("${region_highlight[@]}")
