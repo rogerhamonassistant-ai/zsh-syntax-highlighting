@@ -119,22 +119,33 @@ fi
 
 if "$test_shell" -f "$compare_tool" --baseline "$repo_root" --candidate self="$repo_root" --scenario long-pipeline --lengths 2 --runs 1 >| "$stdout_file" 2>| "$stderr_file"; then
   output=$(<"$stdout_file")
-  _assert_contains 'compare tool prints a baseline-before result row' "$output" $'result\tbaseline-before\tbaseline\tmain\tlong-pipeline\t2\t1\t'
-  _assert_contains 'compare tool prints a candidate result row' "$output" $'result\tcandidate\tself\tmain\tlong-pipeline\t2\t1\t'
-  _assert_contains 'compare tool prints a baseline-after result row' "$output" $'result\tbaseline-after\tbaseline\tmain\tlong-pipeline\t2\t1\t'
-  _assert_contains 'compare tool prints a summary row' "$output" $'summary\tself\tmain\tlong-pipeline\t2\t1\t'
+  _assert_contains 'compare tool prints a baseline-before result row' "$output" $'result\tbaseline-before\tbaseline\tmain\tlong-pipeline\t2\t1\t0\t'
+  _assert_contains 'compare tool prints a candidate result row' "$output" $'result\tcandidate\tself\tmain\tlong-pipeline\t2\t1\t1\t'
+  _assert_contains 'compare tool prints a baseline-after result row' "$output" $'result\tbaseline-after\tbaseline\tmain\tlong-pipeline\t2\t1\t0\t'
+  _assert_contains 'compare tool prints a summary row' "$output" $'summary\tself\tmain\tlong-pipeline\t2\t1\t1\t'
 else
   _not_ok 'compare tool runs a basic bracketed comparison' "unexpected failure: ${(qqq)$(<"$stderr_file")}"
 fi
 
 if "$test_shell" -f "$compare_tool" --baseline "$repo_root" --candidate self="$repo_root" --highlighters brackets --scenario bracket-cursor-replay --lengths 4 --runs 1 --trace >| "$stdout_file" 2>| "$stderr_file"; then
   output=$(<"$stdout_file")
-  _assert_contains 'compare tool prefixes baseline trace rows' "$output" $'trace\tbaseline-before\tbaseline\tbrackets\tbracket-cursor-replay\t4\t1\t'
-  _assert_contains 'compare tool prefixes candidate trace rows' "$output" $'trace\tcandidate\tself\tbrackets\tbracket-cursor-replay\t4\t1\t'
-  _assert_contains 'compare tool prefixes baseline-after trace rows' "$output" $'trace\tbaseline-after\tbaseline\tbrackets\tbracket-cursor-replay\t4\t1\t'
-  _assert_contains 'compare tool prints a traced summary row' "$output" $'summary\tself\tbrackets\tbracket-cursor-replay\t4\t1\t'
+  _assert_contains 'compare tool prefixes baseline trace rows' "$output" $'trace\tbaseline-before\tbaseline\tbrackets\tbracket-cursor-replay\t4\t1\t0\t'
+  _assert_contains 'compare tool prefixes candidate trace rows' "$output" $'trace\tcandidate\tself\tbrackets\tbracket-cursor-replay\t4\t1\t1\t'
+  _assert_contains 'compare tool prefixes baseline-after trace rows' "$output" $'trace\tbaseline-after\tbaseline\tbrackets\tbracket-cursor-replay\t4\t1\t0\t'
+  _assert_contains 'compare tool prints a traced summary row' "$output" $'summary\tself\tbrackets\tbracket-cursor-replay\t4\t1\t1\t'
 else
   _not_ok 'compare tool runs a traced bracketed comparison' "unexpected failure: ${(qqq)$(<"$stderr_file")}"
+fi
+
+if "$test_shell" -f "$compare_tool" --baseline "$repo_root" --candidate self="$repo_root" --scenario long-pipeline --lengths 2 --runs 1 --repeat 2 >| "$stdout_file" 2>| "$stderr_file"; then
+  output=$(<"$stdout_file")
+  integer repeated_candidate_rows=${#${(M)${(@f)output}:#result$'\t'candidate$'\t'self$'\t'main$'\t'long-pipeline$'\t'2$'\t'1$'\t'*}}
+  integer repeated_summary_rows=${#${(M)${(@f)output}:#summary$'\t'self$'\t'main$'\t'long-pipeline$'\t'2$'\t'1$'\t'*}}
+  _assert_eq 'compare tool repeats candidate calls inside one bracket' "$repeated_candidate_rows" '2'
+  _assert_eq 'compare tool prints one summary per repeated candidate call' "$repeated_summary_rows" '2'
+  _assert_contains 'compare tool marks the second repeated candidate call with repeat index 2' "$output" $'result\tcandidate\tself\tmain\tlong-pipeline\t2\t1\t2\t'
+else
+  _not_ok 'compare tool supports repeated candidate calls inside one bracket' "unexpected failure: ${(qqq)$(<"$stderr_file")}"
 fi
 
 typeset -gr analysis_input_file=$temp_dir/compare-analysis.tsv

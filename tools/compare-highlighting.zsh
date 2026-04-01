@@ -10,13 +10,13 @@ typeset -gr tool_shell=${${${(z)$(ps -p $$ -o command=)}[1]#-}:-${commands[zsh]:
 
 _compare_usage() {
   cat <<'EOF'
-usage: tools/compare-highlighting.zsh --baseline DIR --candidate LABEL=DIR [--candidate LABEL=DIR ...] --scenario NAME [--scenario NAME ...] [--highlighters main,brackets] [--lengths 128,256] [--runs N] [--trace]
+usage: tools/compare-highlighting.zsh --baseline DIR --candidate LABEL=DIR [--candidate LABEL=DIR ...] --scenario NAME [--scenario NAME ...] [--highlighters main,brackets] [--lengths 128,256] [--runs N] [--repeat N] [--trace]
 
 Run bracketed baseline/candidate comparisons for highlighting benchmarks.
 
 For each scenario, length, and run:
   1. baseline-before
-  2. each candidate
+  2. each candidate, repeated N times
   3. baseline-after
 
 The script prints:
@@ -33,7 +33,7 @@ _compare_die() {
 
 typeset baseline_dir= highlighters_arg=main lengths_arg='128,256' trace_flag=
 typeset -a candidate_labels=() candidate_dirs=() scenarios=()
-integer runs=1 trace_mode=0
+integer runs=1 repeat_count=1 trace_mode=0
 
 while (( $# > 0 )); do
   case $1 in
@@ -99,6 +99,14 @@ while (( $# > 0 )); do
     (--runs=*)
       runs=${1#--runs=}
       ;;
+    (--repeat)
+      shift
+      (( $# > 0 )) || _compare_die '--repeat requires a value' 2
+      repeat_count=$1
+      ;;
+    (--repeat=*)
+      repeat_count=${1#--repeat=}
+      ;;
     (--trace)
       trace_mode=1
       trace_flag=--trace
@@ -117,6 +125,7 @@ done
 (( $#candidate_labels > 0 )) || _compare_die 'at least one --candidate is required' 2
 (( $#scenarios > 0 )) || _compare_die 'at least one --scenario is required' 2
 (( runs > 0 )) || _compare_die '--runs must be positive' 2
+(( repeat_count > 0 )) || _compare_die '--repeat must be positive' 2
 
 typeset -a highlighters=("${(@s:,:)highlighters_arg}")
 typeset -a lengths=("${(@s:,:)lengths_arg}")
@@ -156,22 +165,27 @@ trap 'rm -rf -- "$temp_dir"' EXIT
 typeset -gr stdout_file=$temp_dir/stdout.txt
 typeset -gr stderr_file=$temp_dir/stderr.txt
 
-print -r -- $'# result columns: kind\tphase\tlabel\thighlighters\tscenario\tlength\trun\tbuffer_bytes\tseconds'
-print -r -- $'# trace columns: kind\tphase\tlabel\thighlighters\tscenario\tlength\trun\tmetric\tvalue'
-print -r -- $'# summary columns: kind\tlabel\thighlighters\tscenario\tlength\trun\tbaseline_before_seconds\tcandidate_seconds\tbaseline_after_seconds\tbracketed_baseline_mean_seconds\tdelta_percent\tbaseline_drift_percent'
+print -r -- $'# result columns: kind\tphase\tlabel\thighlighters\tscenario\tlength\trun\trepeat\tbuffer_bytes\tseconds'
+print -r -- $'# trace columns: kind\tphase\tlabel\thighlighters\tscenario\tlength\trun\trepeat\tmetric\tvalue'
+print -r -- $'# summary columns: kind\tlabel\thighlighters\tscenario\tlength\trun\trepeat\tbaseline_before_seconds\tcandidate_seconds\tbaseline_after_seconds\tbracketed_baseline_mean_seconds\tdelta_percent\tbaseline_drift_percent'
 
 _compare_emit_prefixed_output() {
-  local phase=$1 label=$2
+  local phase=$1 label=$2 run_value=$3 repeat_value=$4
   local line
   local result_line=
+  local -a parts
 
   while IFS= read -r line; do
     [[ -n $line ]] || continue
     [[ $line == highlighters$'\t'* ]] && continue
     if [[ $line == trace$'\t'* ]]; then
-      print -r -- "trace"$'\t'"$phase"$'\t'"$label"$'\t'"${line#trace$'\t'}"
+      parts=("${(@ps:\t:)${line#trace$'\t'}}")
+      (( $#parts == 6 )) || _compare_die "malformed trace row for $label / $phase: $line"
+      print -r -- "trace"$'\t'"$phase"$'\t'"$label"$'\t'"$parts[1]"$'\t'"$parts[2]"$'\t'"$parts[3]"$'\t'"$run_value"$'\t'"$repeat_value"$'\t'"$parts[5]"$'\t'"$parts[6]"
     else
-      print -r -- "result"$'\t'"$phase"$'\t'"$label"$'\t'"$line"
+      parts=("${(@ps:\t:)line}")
+      (( $#parts == 6 )) || _compare_die "malformed result row for $label / $phase: $line"
+      print -r -- "result"$'\t'"$phase"$'\t'"$label"$'\t'"$parts[1]"$'\t'"$parts[2]"$'\t'"$parts[3]"$'\t'"$run_value"$'\t'"$repeat_value"$'\t'"$parts[5]"$'\t'"$parts[6]"
       result_line=$line
     fi
   done < "$stdout_file"
@@ -181,37 +195,40 @@ _compare_emit_prefixed_output() {
 }
 
 _compare_run_once() {
-  local phase=$1 label=$2 repo_dir=$3 scenario_name=$4 length_value=$5 run_value=$6
+  local phase=$1 label=$2 repo_dir=$3 scenario_name=$4 length_value=$5 run_value=$6 repeat_value=$7
   local -a cmd=("$tool_shell" -f "$repo_dir/$benchmark_tool_name" --highlighters "$highlighters_arg" --scenario "$scenario_name" --lengths "$length_value" --runs 1)
   (( trace_mode )) && cmd+=("$trace_flag")
 
   "${cmd[@]}" >| "$stdout_file" 2>| "$stderr_file" || _compare_die "benchmark failed for $label / $phase / $scenario_name / $length_value"$'\n'"$(<"$stderr_file")"
-  _compare_emit_prefixed_output "$phase" "$label"
+  _compare_emit_prefixed_output "$phase" "$label" "$run_value" "$repeat_value"
 }
 
 typeset baseline_before_line baseline_after_line candidate_line
 typeset -a fields
 typeset -F baseline_before_seconds baseline_after_seconds candidate_seconds baseline_mean_seconds delta_percent baseline_drift_percent
+integer repeat
 
 for scenario in "${scenarios[@]}"; do
   for length in "${lengths[@]}"; do
     for (( run = 1; run <= runs; ++run )); do
-      _compare_run_once baseline-before baseline "$baseline_dir" "$scenario" "$length" "$run"
+      _compare_run_once baseline-before baseline "$baseline_dir" "$scenario" "$length" "$run" 0
       baseline_before_line=$REPLY
       fields=("${(@ps:\t:)baseline_before_line}")
       baseline_before_seconds=${fields[6]}
 
-      typeset -A candidate_seconds_by_label=()
-      for idx in {1..$#candidate_labels}; do
-        candidate_label=$candidate_labels[$idx]
-        candidate_dir=$candidate_dirs[$idx]
-        _compare_run_once candidate "$candidate_label" "$candidate_dir" "$scenario" "$length" "$run"
-        candidate_line=$REPLY
-        fields=("${(@ps:\t:)candidate_line}")
-        candidate_seconds_by_label[$candidate_label]=${fields[6]}
+      typeset -A candidate_seconds_by_label_repeat=()
+      for (( repeat = 1; repeat <= repeat_count; ++repeat )); do
+        for idx in {1..$#candidate_labels}; do
+          candidate_label=$candidate_labels[$idx]
+          candidate_dir=$candidate_dirs[$idx]
+          _compare_run_once candidate "$candidate_label" "$candidate_dir" "$scenario" "$length" "$run" "$repeat"
+          candidate_line=$REPLY
+          fields=("${(@ps:\t:)candidate_line}")
+          candidate_seconds_by_label_repeat[$candidate_label:$repeat]=${fields[6]}
+        done
       done
 
-      _compare_run_once baseline-after baseline "$baseline_dir" "$scenario" "$length" "$run"
+      _compare_run_once baseline-after baseline "$baseline_dir" "$scenario" "$length" "$run" 0
       baseline_after_line=$REPLY
       fields=("${(@ps:\t:)baseline_after_line}")
       baseline_after_seconds=${fields[6]}
@@ -223,14 +240,16 @@ for scenario in "${scenarios[@]}"; do
         baseline_drift_percent=0.0
       fi
 
-      for candidate_label in "${candidate_labels[@]}"; do
-        candidate_seconds=${candidate_seconds_by_label[$candidate_label]}
-        if (( baseline_mean_seconds > 0.0 )); then
-          delta_percent=$(( ((candidate_seconds - baseline_mean_seconds) / baseline_mean_seconds) * 100.0 ))
-        else
-          delta_percent=0.0
-        fi
-        print -r -- "summary"$'\t'"$candidate_label"$'\t'"${(j:,:)highlighters}"$'\t'"$scenario"$'\t'"$length"$'\t'"$run"$'\t'"$baseline_before_seconds"$'\t'"$candidate_seconds"$'\t'"$baseline_after_seconds"$'\t'"$baseline_mean_seconds"$'\t'"$delta_percent"$'\t'"$baseline_drift_percent"
+      for (( repeat = 1; repeat <= repeat_count; ++repeat )); do
+        for candidate_label in "${candidate_labels[@]}"; do
+          candidate_seconds=${candidate_seconds_by_label_repeat[$candidate_label:$repeat]}
+          if (( baseline_mean_seconds > 0.0 )); then
+            delta_percent=$(( ((candidate_seconds - baseline_mean_seconds) / baseline_mean_seconds) * 100.0 ))
+          else
+            delta_percent=0.0
+          fi
+          print -r -- "summary"$'\t'"$candidate_label"$'\t'"${(j:,:)highlighters}"$'\t'"$scenario"$'\t'"$length"$'\t'"$run"$'\t'"$repeat"$'\t'"$baseline_before_seconds"$'\t'"$candidate_seconds"$'\t'"$baseline_after_seconds"$'\t'"$baseline_mean_seconds"$'\t'"$delta_percent"$'\t'"$baseline_drift_percent"
+        done
       done
     done
   done

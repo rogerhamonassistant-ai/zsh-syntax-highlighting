@@ -21,6 +21,7 @@ class SummaryRow:
     scenario: str
     length: int
     run: int
+    repeat: int
     baseline_before_seconds: float
     candidate_seconds: float
     baseline_after_seconds: float
@@ -128,23 +129,42 @@ def _load_rows(paths: Iterable[Path]) -> list[SummaryRow]:
                 parts = line.split("\t")
                 if not parts or parts[0] != "summary":
                     continue
-                if len(parts) != 12:
-                    _die(f"{path}: malformed summary row with {len(parts)} fields")
-                rows.append(
-                    SummaryRow(
-                        label=parts[1],
-                        highlighters=parts[2],
-                        scenario=parts[3],
-                        length=int(parts[4]),
-                        run=int(parts[5]),
-                        baseline_before_seconds=float(parts[6]),
-                        candidate_seconds=float(parts[7]),
-                        baseline_after_seconds=float(parts[8]),
-                        bracketed_baseline_mean_seconds=float(parts[9]),
-                        delta_percent=float(parts[10]),
-                        baseline_drift_percent=float(parts[11]),
+                if len(parts) == 12:
+                    rows.append(
+                        SummaryRow(
+                            label=parts[1],
+                            highlighters=parts[2],
+                            scenario=parts[3],
+                            length=int(parts[4]),
+                            run=int(parts[5]),
+                            repeat=1,
+                            baseline_before_seconds=float(parts[6]),
+                            candidate_seconds=float(parts[7]),
+                            baseline_after_seconds=float(parts[8]),
+                            bracketed_baseline_mean_seconds=float(parts[9]),
+                            delta_percent=float(parts[10]),
+                            baseline_drift_percent=float(parts[11]),
+                        )
                     )
-                )
+                elif len(parts) == 13:
+                    rows.append(
+                        SummaryRow(
+                            label=parts[1],
+                            highlighters=parts[2],
+                            scenario=parts[3],
+                            length=int(parts[4]),
+                            run=int(parts[5]),
+                            repeat=int(parts[6]),
+                            baseline_before_seconds=float(parts[7]),
+                            candidate_seconds=float(parts[8]),
+                            baseline_after_seconds=float(parts[9]),
+                            bracketed_baseline_mean_seconds=float(parts[10]),
+                            delta_percent=float(parts[11]),
+                            baseline_drift_percent=float(parts[12]),
+                        )
+                    )
+                else:
+                    _die(f"{path}: malformed summary row with {len(parts)} fields")
     if not rows:
         _die("no summary rows found in the provided input")
     return rows
