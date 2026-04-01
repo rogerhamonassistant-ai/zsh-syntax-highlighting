@@ -445,9 +445,9 @@ _zsh_highlight_highlighter_brackets_paint()
         ('`')
           if (( backtick_active )) && (( shell_code_paren_depth == current_backtick_base_shell_depth )); then
             if (( $#backtick_scope_ids > 1 )); then
-              backtick_scope_ids=("${backtick_scope_ids[1,-2]}")
-              backtick_base_shell_depths=("${backtick_base_shell_depths[1,-2]}")
-              backtick_double_quote_states=("${backtick_double_quote_states[1,-2]}")
+              shift -p backtick_scope_ids
+              shift -p backtick_base_shell_depths
+              shift -p backtick_double_quote_states
             else
               backtick_scope_ids=()
               backtick_base_shell_depths=()
@@ -589,9 +589,9 @@ _zsh_highlight_highlighter_brackets_paint()
       '`')
         if (( backtick_active )) && (( shell_code_paren_depth == current_backtick_base_shell_depth )); then
           if (( $#backtick_scope_ids > 1 )); then
-            backtick_scope_ids=("${backtick_scope_ids[1,-2]}")
-            backtick_base_shell_depths=("${backtick_base_shell_depths[1,-2]}")
-            backtick_double_quote_states=("${backtick_double_quote_states[1,-2]}")
+            shift -p backtick_scope_ids
+            shift -p backtick_base_shell_depths
+            shift -p backtick_double_quote_states
           else
             backtick_scope_ids=()
             backtick_base_shell_depths=()
@@ -720,17 +720,17 @@ _zsh_highlight_highlighter_brackets_paint()
            ( (( ! backtick_active )) || (( shell_code_paren_depth > current_backtick_base_shell_depth )) )
         then
           if (( $#shell_code_scope_base_depths )) && (( shell_code_scope_base_depths[-1] == shell_code_paren_depth )); then
-            shell_code_scope_ids=("${shell_code_scope_ids[1,-2]}")
-            shell_code_scope_base_depths=("${shell_code_scope_base_depths[1,-2]}")
+            shift -p shell_code_scope_ids
+            shift -p shell_code_scope_base_depths
           fi
           (( shell_code_paren_depth-- ))
         fi
         if [[ $char == ')' ]] && (( pending_arithmetic_parens == 0 )) && (( $#arithmetic_group_depths )); then
           if (( arithmetic_close_pending_depths[-1] )); then
-            arithmetic_group_depths=("${arithmetic_group_depths[1,-2]}")
-            arithmetic_close_pending_depths=("${arithmetic_close_pending_depths[1,-2]}")
-            arithmetic_scope_shell_depths=("${arithmetic_scope_shell_depths[1,-2]}")
-            arithmetic_scope_backtick_depths=("${arithmetic_scope_backtick_depths[1,-2]}")
+            shift -p arithmetic_group_depths
+            shift -p arithmetic_close_pending_depths
+            shift -p arithmetic_scope_shell_depths
+            shift -p arithmetic_scope_backtick_depths
           elif (( arithmetic_group_depths[-1] > 0 )); then
             (( arithmetic_group_depths[-1]-- ))
           elif [[ ${BUFFER[$(( pos + 1 ))]:-} == ')' ]]; then
