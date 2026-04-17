@@ -6,6 +6,8 @@ setopt pipe_fail no_unset warn_create_global
 typeset -gr repo_root=${0:A:h:h}
 typeset -gr profile_tool=$repo_root/tools/profile-highlighting.zsh
 typeset -gr benchmark_tool=$repo_root/tools/benchmark-highlighting.zsh
+typeset -gr compare_tool=$repo_root/tools/compare-highlighting.zsh
+typeset -gr compare_analysis_tool=$repo_root/tools/compare-highlighting-analysis.py
 typeset -gr zprof_tool=$repo_root/tests/test-zprof.zsh
 typeset -gr test_shell=${${${(z)$(ps -p $$ -o command=)}[1]#-}:-${commands[zsh]:-zsh}}
 
@@ -113,6 +115,106 @@ if "$test_shell" -f "$benchmark_tool" --highlighters main --scenario option-nest
   _assert_contains 'benchmark tool prints an option nested shell scenario row' "$output" $'main\toption-nested-shell-code\t2\t1'
 else
   _not_ok 'benchmark tool runs the option nested shell scenario' "unexpected failure: ${(qqq)$(<"$stderr_file")}"
+fi
+
+if "$test_shell" -f "$compare_tool" --baseline "$repo_root" --candidate self="$repo_root" --scenario long-pipeline --lengths 2 --runs 1 >| "$stdout_file" 2>| "$stderr_file"; then
+  output=$(<"$stdout_file")
+  _assert_contains 'compare tool prints a baseline-before result row' "$output" $'result\tbaseline-before\tbaseline\tmain\tlong-pipeline\t2\t1\t0\t'
+  _assert_contains 'compare tool prints a candidate result row' "$output" $'result\tcandidate\tself\tmain\tlong-pipeline\t2\t1\t1\t'
+  _assert_contains 'compare tool prints a baseline-after result row' "$output" $'result\tbaseline-after\tbaseline\tmain\tlong-pipeline\t2\t1\t0\t'
+  _assert_contains 'compare tool prints a summary row' "$output" $'summary\tself\tmain\tlong-pipeline\t2\t1\t1\t'
+else
+  _not_ok 'compare tool runs a basic bracketed comparison' "unexpected failure: ${(qqq)$(<"$stderr_file")}"
+fi
+
+if "$test_shell" -f "$compare_tool" --baseline "$repo_root" --candidate self="$repo_root" --highlighters brackets --scenario bracket-cursor-replay --lengths 4 --runs 1 --trace >| "$stdout_file" 2>| "$stderr_file"; then
+  output=$(<"$stdout_file")
+  _assert_contains 'compare tool prefixes baseline trace rows' "$output" $'trace\tbaseline-before\tbaseline\tbrackets\tbracket-cursor-replay\t4\t1\t0\t'
+  _assert_contains 'compare tool prefixes candidate trace rows' "$output" $'trace\tcandidate\tself\tbrackets\tbracket-cursor-replay\t4\t1\t1\t'
+  _assert_contains 'compare tool prefixes baseline-after trace rows' "$output" $'trace\tbaseline-after\tbaseline\tbrackets\tbracket-cursor-replay\t4\t1\t0\t'
+  _assert_contains 'compare tool prints a traced summary row' "$output" $'summary\tself\tbrackets\tbracket-cursor-replay\t4\t1\t1\t'
+else
+  _not_ok 'compare tool runs a traced bracketed comparison' "unexpected failure: ${(qqq)$(<"$stderr_file")}"
+fi
+
+if "$test_shell" -f "$compare_tool" --baseline "$repo_root" --candidate self="$repo_root" --scenario long-pipeline --lengths 2 --runs 1 --repeat 2 >| "$stdout_file" 2>| "$stderr_file"; then
+  output=$(<"$stdout_file")
+  integer repeated_candidate_rows=${#${(M)${(@f)output}:#result$'\t'candidate$'\t'self$'\t'main$'\t'long-pipeline$'\t'2$'\t'1$'\t'*}}
+  integer repeated_summary_rows=${#${(M)${(@f)output}:#summary$'\t'self$'\t'main$'\t'long-pipeline$'\t'2$'\t'1$'\t'*}}
+  _assert_eq 'compare tool repeats candidate calls inside one bracket' "$repeated_candidate_rows" '2'
+  _assert_eq 'compare tool prints one summary per repeated candidate call' "$repeated_summary_rows" '2'
+  _assert_contains 'compare tool marks the second repeated candidate call with repeat index 2' "$output" $'result\tcandidate\tself\tmain\tlong-pipeline\t2\t1\t2\t'
+else
+  _not_ok 'compare tool supports repeated candidate calls inside one bracket' "unexpected failure: ${(qqq)$(<"$stderr_file")}"
+fi
+
+if "$test_shell" -f "$compare_tool" --baseline "$repo_root" --candidate self="$repo_root" --scenario long-pipeline --lengths 2 --runs 2 --rolling-baseline >| "$stdout_file" 2>| "$stderr_file"; then
+  output=$(<"$stdout_file")
+  integer rolling_fresh_rows=${#${(M)${(@f)output}:#result$'\t'baseline-before$'\t'baseline$'\t'main$'\t'long-pipeline$'\t'2$'\t'*}}
+  integer rolling_carried_rows=${#${(M)${(@f)output}:#result$'\t'baseline-before-rolling$'\t'baseline$'\t'main$'\t'long-pipeline$'\t'2$'\t'2$'\t'0$'\t'*}}
+  integer rolling_summary_rows=${#${(M)${(@f)output}:#summary$'\t'self$'\t'main$'\t'long-pipeline$'\t'2$'\t'*}}
+  _assert_eq 'compare tool emits one fresh baseline-before in rolling mode' "$rolling_fresh_rows" '1'
+  _assert_eq 'compare tool emits a carried baseline-before for the second rolling run' "$rolling_carried_rows" '1'
+  _assert_eq 'compare tool keeps one summary row per rolling run' "$rolling_summary_rows" '2'
+else
+  _not_ok 'compare tool supports rolling baseline reuse' "unexpected failure: ${(qqq)$(<"$stderr_file")}"
+fi
+
+if "$test_shell" -f "$compare_tool" --baseline "$repo_root" --candidate self="$repo_root" --scenario long-pipeline --lengths 2 --runs 2 >| "$stdout_file" 2>| "$stderr_file"; then
+  output=$(<"$stdout_file")
+  _assert_contains 'compare tool preserves the second run index in candidate rows' "$output" $'result\tcandidate\tself\tmain\tlong-pipeline\t2\t2\t1\t'
+  _assert_contains 'compare tool preserves the second run index in summary rows' "$output" $'summary\tself\tmain\tlong-pipeline\t2\t2\t1\t'
+else
+  _not_ok 'compare tool preserves run indices across multi-run comparisons' "unexpected failure: ${(qqq)$(<"$stderr_file")}"
+fi
+
+typeset -gr analysis_input_file=$temp_dir/compare-analysis.tsv
+cat >| "$analysis_input_file" <<'EOF'
+# summary columns: kind	label	highlighters	scenario	length	run	baseline_before_seconds	candidate_seconds	baseline_after_seconds	bracketed_baseline_mean_seconds	delta_percent	baseline_drift_percent
+summary	candidate	main	synthetic	64	1	1.00	1.03	1.00	1.00	3.00	0.00
+summary	candidate	main	synthetic	64	2	1.00	1.04	1.00	1.00	4.00	0.00
+summary	candidate	main	synthetic	64	3	1.00	0.20	4.00	2.50	-92.00	300.00
+summary	candidate	main	synthetic	64	4	1.00	1.05	1.00	1.00	5.00	0.00
+summary	candidate	main	synthetic	64	5	1.00	1.02	1.00	1.00	2.00	0.00
+EOF
+
+if python3 "$compare_analysis_tool" "$analysis_input_file" >| "$stdout_file" 2>| "$stderr_file"; then
+  output=$(<"$stdout_file")
+  _assert_contains 'compare analysis tool prints a TSV header' "$output" $'label\thighlighters\tscenario\tlength\truns\tkept_runs\tpruned_runs\t'
+  _assert_contains 'compare analysis tool keeps the synthetic group' "$output" $'candidate\tmain\tsynthetic\t64\t5\t4\t1\t'
+  _assert_contains 'compare analysis tool marks a slower verdict after pruning the outlier' "$output" $'\tslower\t'
+  _assert_contains 'compare analysis tool reports the pruning reason' "$output" $'\tdelta:1'
+else
+  _not_ok 'compare analysis tool summarizes synthetic comparison logs' "unexpected failure: ${(qqq)$(<"$stderr_file")}"
+fi
+
+if python3 "$compare_analysis_tool" --max-halfspan-pct 10 "$analysis_input_file" >| "$stdout_file" 2>| "$stderr_file"; then
+  output=$(<"$stdout_file")
+  _assert_contains 'compare analysis tool can hard-prune wide baseline brackets' "$output" $'\tdelta:1,max-halfspan:1'
+else
+  _not_ok 'compare analysis tool can hard-prune wide baseline brackets' "unexpected failure: ${(qqq)$(<"$stderr_file")}"
+fi
+
+typeset -gr full_prune_input_file=$temp_dir/compare-analysis-full-prune.tsv
+cat >| "$full_prune_input_file" <<'EOF'
+# summary columns: kind	label	highlighters	scenario	length	run	baseline_before_seconds	candidate_seconds	baseline_after_seconds	bracketed_baseline_mean_seconds	delta_percent	baseline_drift_percent
+summary	candidate	main	synthetic-empty	64	1	1.00	1.05	4.00	2.50	-58.00	300.00
+summary	candidate	main	synthetic-empty	64	2	1.00	0.95	4.00	2.50	-62.00	300.00
+EOF
+
+if python3 "$compare_analysis_tool" --max-halfspan-pct 10 "$full_prune_input_file" >| "$stdout_file" 2>| "$stderr_file"; then
+  output=$(<"$stdout_file")
+  _assert_contains 'compare analysis tool keeps fully pruned groups empty' "$output" $'candidate\tmain\tsynthetic-empty\t64\t2\t0\t2\t'
+  _assert_contains 'compare analysis tool reports full-prune reasons without restoring rows' "$output" $'\tmax-halfspan:2'
+else
+  _not_ok 'compare analysis tool handles fully pruned groups without restoring rows' "unexpected failure: ${(qqq)$(<"$stderr_file")}"
+fi
+
+if python3 "$compare_analysis_tool" --bootstrap-samples 0 "$analysis_input_file" >| "$stdout_file" 2>| "$stderr_file"; then
+  _not_ok 'compare analysis tool rejects nonpositive bootstrap sample counts' 'unexpected success'
+else
+  errors=$(<"$stderr_file")
+  _assert_contains 'compare analysis tool rejects nonpositive bootstrap sample counts' "$errors" '--bootstrap-samples must be positive'
 fi
 
 if "$test_shell" -f "$benchmark_tool" --highlighters brackets --scenario bracket-cursor-replay --lengths 4 --runs 1 --trace >| "$stdout_file" 2>| "$stderr_file"; then
