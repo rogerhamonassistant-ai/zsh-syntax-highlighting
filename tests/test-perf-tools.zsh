@@ -160,6 +160,14 @@ else
   _not_ok 'compare tool supports rolling baseline reuse' "unexpected failure: ${(qqq)$(<"$stderr_file")}"
 fi
 
+if "$test_shell" -f "$compare_tool" --baseline "$repo_root" --candidate self="$repo_root" --scenario long-pipeline --lengths 2 --runs 2 >| "$stdout_file" 2>| "$stderr_file"; then
+  output=$(<"$stdout_file")
+  _assert_contains 'compare tool preserves the second run index in candidate rows' "$output" $'result\tcandidate\tself\tmain\tlong-pipeline\t2\t2\t1\t'
+  _assert_contains 'compare tool preserves the second run index in summary rows' "$output" $'summary\tself\tmain\tlong-pipeline\t2\t2\t1\t'
+else
+  _not_ok 'compare tool preserves run indices across multi-run comparisons' "unexpected failure: ${(qqq)$(<"$stderr_file")}"
+fi
+
 typeset -gr analysis_input_file=$temp_dir/compare-analysis.tsv
 cat >| "$analysis_input_file" <<'EOF'
 # summary columns: kind	label	highlighters	scenario	length	run	baseline_before_seconds	candidate_seconds	baseline_after_seconds	bracketed_baseline_mean_seconds	delta_percent	baseline_drift_percent
@@ -185,6 +193,28 @@ if python3 "$compare_analysis_tool" --max-halfspan-pct 10 "$analysis_input_file"
   _assert_contains 'compare analysis tool can hard-prune wide baseline brackets' "$output" $'\tdelta:1,max-halfspan:1'
 else
   _not_ok 'compare analysis tool can hard-prune wide baseline brackets' "unexpected failure: ${(qqq)$(<"$stderr_file")}"
+fi
+
+typeset -gr full_prune_input_file=$temp_dir/compare-analysis-full-prune.tsv
+cat >| "$full_prune_input_file" <<'EOF'
+# summary columns: kind	label	highlighters	scenario	length	run	baseline_before_seconds	candidate_seconds	baseline_after_seconds	bracketed_baseline_mean_seconds	delta_percent	baseline_drift_percent
+summary	candidate	main	synthetic-empty	64	1	1.00	1.05	4.00	2.50	-58.00	300.00
+summary	candidate	main	synthetic-empty	64	2	1.00	0.95	4.00	2.50	-62.00	300.00
+EOF
+
+if python3 "$compare_analysis_tool" --max-halfspan-pct 10 "$full_prune_input_file" >| "$stdout_file" 2>| "$stderr_file"; then
+  output=$(<"$stdout_file")
+  _assert_contains 'compare analysis tool keeps fully pruned groups empty' "$output" $'candidate\tmain\tsynthetic-empty\t64\t2\t0\t2\t'
+  _assert_contains 'compare analysis tool reports full-prune reasons without restoring rows' "$output" $'\tmax-halfspan:2'
+else
+  _not_ok 'compare analysis tool handles fully pruned groups without restoring rows' "unexpected failure: ${(qqq)$(<"$stderr_file")}"
+fi
+
+if python3 "$compare_analysis_tool" --bootstrap-samples 0 "$analysis_input_file" >| "$stdout_file" 2>| "$stderr_file"; then
+  _not_ok 'compare analysis tool rejects nonpositive bootstrap sample counts' 'unexpected success'
+else
+  errors=$(<"$stderr_file")
+  _assert_contains 'compare analysis tool rejects nonpositive bootstrap sample counts' "$errors" '--bootstrap-samples must be positive'
 fi
 
 if "$test_shell" -f "$benchmark_tool" --highlighters brackets --scenario bracket-cursor-replay --lengths 4 --runs 1 --trace >| "$stdout_file" 2>| "$stderr_file"; then

@@ -284,12 +284,6 @@ def _summarize_group(
         )
         if not (is_delta_outlier or is_halfspan_outlier or is_hard_halfspan_outlier)
     ]
-    if not kept_rows:
-        kept_rows = rows[:]
-        delta_outliers = [False] * len(rows)
-        halfspan_outliers = [False] * len(rows)
-        hard_halfspan_outliers = [False] * len(rows)
-
     kept_deltas = [row.delta_percent for row in kept_rows]
     kept_halfspans = [row.baseline_halfspan_percent for row in kept_rows]
     kept_abs_drifts = [row.abs_baseline_drift_percent for row in kept_rows]
@@ -360,6 +354,8 @@ def _summarize_group(
 
 def main() -> int:
     args = _parse_args()
+    if args.bootstrap_samples <= 0:
+        _die("--bootstrap-samples must be positive")
     paths = [Path(raw_path) for raw_path in args.files]
     missing = [str(path) for path in paths if not path.is_file()]
     if missing:
